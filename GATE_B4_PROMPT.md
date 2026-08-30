@@ -49,6 +49,13 @@ DATABASE_URL=... npm run test:integration        # expect 98 passing across 14 f
 
 Integration tests **fail loudly if `DATABASE_URL` is unset** (they never skip). `MODEL_PROVIDER=stub` (default) needs no paid API key. If the baseline is not green, stop and diagnose before starting B4.
 
+**Read `PROJECT_HANDOFF.md` §3.3 for the full database setup** — it explains why the DB is local (not Supabase/hosted: the integration tests `CREATE DATABASE` per file, which hosted plans block), the exact `DATABASE_URL` forms for PowerShell / Bash / `.env`, and the caveat that **the test runner reads `DATABASE_URL` from the process environment, not from `.env`**. Integration tests apply migrations to their own ephemeral DBs automatically, but to run the **API + worker** for the four E2E scenarios you must initialize the shared DB first:
+
+```bash
+npm run db:migrate        # apply db/migrations/*.sql
+npm run db:seed           # tenants/users/sources + moneytrace_demo_v1 policy bundle (extend seed for B4 verification contracts)
+```
+
 ---
 
 ## 2. GATE B3 TRACEABILITY REPORT (the checkpoint you are building on)
@@ -134,6 +141,7 @@ Every added mutation body and response must be a registered named schema: runtim
 - **Agent claims**: always `SYNTHETIC_AGENT/UNTRUSTED_CLAIM`; retained value `= max(0, eligible_recovery_captures − linked_refunds − linked_reversals − linked_disputes − independently_satisfied_baseline)`; the required opening claim gives `₹1,20,000 − ₹1,20,000 = ₹0` → `REVERSED`; evaluations append-only; a claim never changes source financial facts.
 - **Reversal**: a later authoritative refund/reversal appends `EFFECT_REVERSED`/`REVERSED`, opens a **new case epoch**, and never erases the prior run/allocation.
 - **Synthetic adapters** (`src/integrations/synthetic-*`): signed Route (transfer + processed), separate recipient-settlement source, signed synthetic **bank** (`BankCreditObserved` with amount/currency/recipient/UTR/value-date), synthetic **ERP** (accepts only a reconciled expectation id, emits observed receivable closure), recovery. Every record labelled `synthetic`; none presented as Razorpay or real bank movement. `settlement.processed` never becomes `BankCreditObserved`.
+- **Audit every new B4 mutation** (backend PRD §18): verification evaluation, allocation, receivable closure, reversal, demo reset, and scenario advance each append an `audit_entries` row — reuse the append-only pattern B3 already follows. As in B3, **if the audit write required for an action cannot commit, the action must not proceed** (verify/reconcile/close/reverse in the same transaction as their audit row).
 - Use the injected/fixed clock everywhere for determinism. Money stays `bigint`/decimal-string INR.
 
 ### 3.5 500-record dataset + demo orchestration (PRD §16)
@@ -148,6 +156,11 @@ Assert one case/action/effect/allocation each, correct rupee values, conflict ab
 
 ### 3.7 Required B4 tests (add alongside implementation)
 Authority coverage and settlement-not-bank proof; exact/ambiguous/contradictory reconciliation; concurrent one-to-one allocation (exactly one wins); observed ERP closure sequencing; claim full/partial/refund/reversal retained value; late reversal after closure reopens epoch; verification without all authoritative checks stays pending (never forced verified); cross-tenant negatives for verification/reconciliation/claims/audit; demo reset/advance idempotency + manifest determinism (seed/reset twice → identical manifest hash); the four E2E scenarios.
+
+### 3.8 Explicitly OUT of scope for B4 (do not build)
+- **Gate B5** (final hardening, backend completion report, `BACKEND READY FOR FRONTEND`) and **all frontend work** (`src/web`).
+- **The optional Razorpay Test Mode adapter (PRD §17 / MT-011).** It is optional, must **never** be a demo dependency, and is **not** required for B4 acceptance. The `POST /v1/webhooks/razorpay` route already exists (B2); do not deepen the real Razorpay mapping now. The **required** evidence path is the signed **synthetic** adapters in §3.4 — build those, not a real Razorpay integration.
+- Multi-currency, partial/many-to-one reconciliation, a general accounting/ledger engine, graph exploration, or any new infrastructure/service boundary (would need a measured need + ADR).
 
 ---
 
