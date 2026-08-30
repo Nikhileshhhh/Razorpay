@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": false,
+    "sourceMap": true,
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
+  },
+  "include": [
+    "src/api",
+    "src/worker",
+    "src/config",
+    "src/contracts",
+    "src/domain",
+    "src/modules",
+    "src/integrations"
+  ],
+  "exclude": ["src/web", "tests", "node_modules", "dist", "dist-web"]
+}

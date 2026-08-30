@@ -1,0 +1,15 @@
+{
+  "event_id": "evt_01HUNKNOWN",
+  "tenant_id": "ten_demo",
+  "source_system": "RAZORPAY_TEST",
+  "source_event_type": "some.upstream.string",
+  "event_type": "TotallyUndocumentedEvent",
+  "schema_version": "1.0",
+  "event_time": "2026-08-25T05:20:00Z",
+  "ingested_at": "2026-08-25T05:20:02Z",
+  "entity_references": {},
+  "payload_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "raw_payload_ref": "db:ingest_events/evt_01HUNKNOWN",
+  "metadata": { "environment": "test" },
+  "data": {}
+}

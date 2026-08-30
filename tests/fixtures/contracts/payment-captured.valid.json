@@ -1,0 +1,23 @@
+{
+  "event_id": "evt_01HPAYMENTCAPTURED",
+  "tenant_id": "ten_demo",
+  "source_system": "RAZORPAY_TEST",
+  "source_account_id": "acc_TEST_ONLY",
+  "source_event_id": "x-razorpay-event-id-TEST_ONLY",
+  "source_event_type": "payment.captured",
+  "event_type": "PaymentCaptured",
+  "schema_version": "1.0",
+  "event_time": "2026-08-25T05:20:00Z",
+  "ingested_at": "2026-08-25T05:20:02Z",
+  "source_entity_version": 1,
+  "entity_references": { "order_id": "order_718", "payment_id": "pay_901" },
+  "economic_subject_hint": "order:merchant-order-718:seller-42",
+  "amount_minor": "50000000",
+  "currency": "INR",
+  "correlation_id": "corr_order_718",
+  "causation_id": null,
+  "payload_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "raw_payload_ref": "db:ingest_events/evt_01HPAYMENTCAPTURED",
+  "metadata": { "environment": "test" },
+  "data": {}
+}

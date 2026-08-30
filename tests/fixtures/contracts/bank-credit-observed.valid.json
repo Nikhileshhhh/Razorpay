@@ -1,0 +1,23 @@
+{
+  "event_id": "evt_01HBANKCREDIT",
+  "tenant_id": "ten_demo",
+  "source_system": "SYNTHETIC_BANK",
+  "source_account_id": null,
+  "source_event_id": null,
+  "source_event_type": "synthetic.bank.credit",
+  "event_type": "BankCreditObserved",
+  "schema_version": "1.0",
+  "event_time": "2026-08-25T09:00:00Z",
+  "ingested_at": "2026-08-25T09:00:01Z",
+  "source_entity_version": null,
+  "entity_references": { "recipient_account_id": "acc_seller_42" },
+  "economic_subject_hint": "order:merchant-order-718:seller-42",
+  "amount_minor": "45500000",
+  "currency": "INR",
+  "correlation_id": "corr_order_718",
+  "causation_id": null,
+  "payload_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "raw_payload_ref": "db:ingest_events/evt_01HBANKCREDIT",
+  "metadata": { "environment": "synthetic" },
+  "data": { "utr": "UTRTEST0001", "value_date": "2026-08-25" }
+}
