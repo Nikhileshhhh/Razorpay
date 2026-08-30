@@ -121,23 +121,56 @@ npm run setup
 
 > If `npm audit` later flags the `drizzle-kit → @esbuild-kit → esbuild` moderate advisories, that is the **known, documented, dev-only** chain — do **not** `npm audit fix --force` it (that pins an old breaking `drizzle-kit`). `npm audit --omit=dev` must stay at **0**.
 
-### 3.3 PostgreSQL for tests
+### 3.3 PostgreSQL — where the database lives and how to point at it
 
-Integration/E2E tests create ephemeral databases and require a reachable server with CREATEDB. They **fail loudly if `DATABASE_URL` is unset** (they never silently skip). Easiest is a disposable Docker container:
+**Use a LOCAL PostgreSQL. The database lives on your own machine — not in the cloud.** This project's demo is deterministic and offline by design (`POST /v1/demo/reset` re-seeds identical state; integration tests create their own throwaway databases), so a disposable local DB is the intended setup, not a limitation. PostgreSQL is the *only* durable runtime dependency.
+
+**Do NOT use Supabase / a hosted DB for this project.** The integration tests **create and drop a fresh ephemeral database per test file** (`CREATE DATABASE moneytrace_test_…`), which needs **CREATEDB privilege** and an admin (`postgres`) database connection. Supabase's hosted plan gives you exactly one database, blocks `CREATE DATABASE`, and its connection pooler doesn't support those session operations — so `npm run test:integration` would fail. It also adds latency + an availability dependency for zero benefit on a prototype. (Deploying against some managed Postgres is a later Gate-B5/deployment concern, out of scope now.)
+
+**Bring up a local Postgres — Docker (easiest):**
 
 ```bash
 docker run -d --name moneytrace-test-pg -e POSTGRES_USER=moneytrace -e POSTGRES_PASSWORD=moneytrace -e POSTGRES_DB=moneytrace -p 5432:5432 postgres:16-alpine
 ```
 
-Then set (do **not** commit a populated `.env`):
+**…or native:** install PostgreSQL 16, create a `moneytrace` role + `moneytrace` database, and use the same URL with your chosen password. Everything else is identical.
+
+The connection string format is `postgres://USER:PASSWORD@HOST:PORT/DATABASE`. With the Docker command above it is:
 
 ```
-DATABASE_URL=postgres://moneytrace:moneytrace@127.0.0.1:5432/moneytrace
+postgres://moneytrace:moneytrace@127.0.0.1:5432/moneytrace
 ```
 
-Unit tests, typecheck, lint, build run **without** a database. `MODEL_PROVIDER=stub` (default) selects the deterministic offline investigation gateway — **no paid API key is ever required.**
+**Setting `DATABASE_URL` (pick one — but read the caveat):**
 
-**Cleanup after test runs:** stop/remove the container, delete any `.env`, ensure no stray Node processes or occupied dev ports (3000 / 5173 / 4700-4900).
+- **`.env` file** — used by the **app** entry points (dotenv-loaded): `db:migrate`, `db:seed`, `db:reset`, `start:api`, `start:worker`.
+  ```bash
+  cp .env.example .env      # then edit the DATABASE_URL line to the value above
+  ```
+- **Per-terminal env var (PowerShell — Windows default shell):**
+  ```
+  $env:DATABASE_URL = "postgres://moneytrace:moneytrace@127.0.0.1:5432/moneytrace"
+  ```
+- **Per-terminal env var (Git Bash):**
+  ```bash
+  export DATABASE_URL="postgres://moneytrace:moneytrace@127.0.0.1:5432/moneytrace"
+  ```
+
+> **Caveat that trips people up:** the **test runner reads `DATABASE_URL` from the process environment**, *not* from `.env`. So for `npm run test:integration` / `npm run test:e2e` you must set the env var in the shell (PowerShell/Bash form above). A `.env` file alone is enough only for the **app** commands (migrate/seed/start).
+
+**Once the DB is up, initialize it to actually run the app:**
+
+```bash
+npm run db:migrate      # applies db/migrations/*.sql to an empty database
+npm run db:seed         # tenants, users, source connections, moneytrace_demo_v1 policy bundle
+# npm run db:reset      # destructive re-seed (disposable demo DB only)
+```
+
+**Persistence note:** the Docker command stores data *inside the container*, so `docker rm` wipes it — which is fine here (reset re-seeds deterministically, tests use throwaway DBs). To keep data across container removal, add a named volume: `-v moneytrace-pgdata:/var/lib/postgresql/data`.
+
+Unit tests, typecheck, lint, and build run **without** a database. `MODEL_PROVIDER=stub` (default) selects the deterministic offline investigation gateway — **no paid API key is ever required.**
+
+**Cleanup after test runs:** stop/remove the container (`docker stop moneytrace-test-pg && docker rm moneytrace-test-pg`), delete any `.env`, ensure no stray Node processes or occupied dev ports (3000 / 5173 / 4700-4900). **Never commit a populated `.env`** or a real DB password — the local `moneytrace:moneytrace` dummy credentials are safe only because they exist solely on your machine.
 
 ---
 
