@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import type { Database } from '../../config/db.js';
+import type { Database, DatabaseTransaction } from '../../config/db.js';
 import {
   auditEntries,
   cases,
@@ -50,12 +50,13 @@ export interface OpenOrGetCaseResult {
 }
 
 /**
- * Idempotent case creation (backend PRD §10.2, FR-CASE-001): the SAME
- * dedupe key always resolves to the SAME active case epoch, so concurrent or
- * replayed invariant violations never create a duplicate case (CTRL-06).
+ * Transaction-aware variant (ADR 0002 D6): reconciliation/reversal flows call
+ * this directly inside their OWN caller-owned transaction instead of opening
+ * an independent one, so case-open + allocation + policy + action + audit
+ * commit or roll back together.
  */
-export async function openOrGetCase(
-  db: Database,
+export async function openOrGetCaseInTransaction(
+  tx: DatabaseTransaction,
   ctx: TenantContext,
   input: OpenOrGetCaseInput,
 ): Promise<OpenOrGetCaseResult> {
@@ -67,7 +68,7 @@ export async function openOrGetCase(
     evaluationWindow: input.evaluationWindow,
   });
 
-  return db.transaction(async (tx) => {
+  {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtextextended(${`${ctx.tenantId}|case|${dedupeKey}`}, 0))`,
     );
@@ -144,7 +145,7 @@ export async function openOrGetCase(
       )
       .limit(1);
     const currentOutcome = currentOutcomeRows[0];
-    if (currentOutcome?.status !== 'DIVERGED') {
+    if (!['DIVERGED', 'REVERSED'].includes(currentOutcome?.status ?? '')) {
       if (currentOutcome) {
         await tx
           .update(financialOutcomes)
@@ -168,7 +169,22 @@ export async function openOrGetCase(
       });
     }
     return { caseId, created: true, dedupeKey };
-  });
+  }
+}
+
+/**
+ * Idempotent case creation (backend PRD §10.2, FR-CASE-001): the SAME
+ * dedupe key always resolves to the SAME active case epoch, so concurrent or
+ * replayed invariant violations never create a duplicate case (CTRL-06). Thin
+ * wrapper over {@link openOrGetCaseInTransaction} for callers that own no
+ * transaction of their own.
+ */
+export async function openOrGetCase(
+  db: Database,
+  ctx: TenantContext,
+  input: OpenOrGetCaseInput,
+): Promise<OpenOrGetCaseResult> {
+  return db.transaction((tx) => openOrGetCaseInTransaction(tx, ctx, input));
 }
 
 /** Append an audited merge/suppression relationship without erasing either case. */
@@ -251,7 +267,101 @@ export interface TransitionCaseInput {
   readonly reason: string;
   readonly expectedVersion: number;
   readonly actorId?: string | null;
+  readonly actorRole?: string | null;
   readonly evidenceIds?: readonly string[];
+  /** Stable ids used by retry-repair flows; ordinary callers omit these. */
+  readonly transitionId?: string;
+  readonly auditId?: string;
+}
+
+/** Serialize every B3 control-loop mutation for one tenant-scoped case. */
+export async function lockControlLoopCase(
+  tx: DatabaseTransaction,
+  ctx: TenantContext,
+  caseId: string,
+): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`${ctx.tenantId}|control-loop|${caseId}`}, 0))`,
+  );
+  await tx.execute(
+    sql`select id from cases where tenant_id = ${ctx.tenantId} and id = ${caseId} for update`,
+  );
+}
+
+/**
+ * Transaction-aware lifecycle primitive. The state update, immutable history,
+ * and audit fact either all commit or all roll back with the caller's work.
+ */
+export async function transitionCaseInTransaction(
+  tx: DatabaseTransaction,
+  ctx: TenantContext,
+  input: TransitionCaseInput,
+): Promise<number> {
+  await lockControlLoopCase(tx, ctx, input.caseId);
+  const rows = await tx
+    .select()
+    .from(cases)
+    .where(and(eq(cases.tenantId, ctx.tenantId), eq(cases.id, input.caseId)))
+    .limit(1);
+  const current = rows[0];
+  if (!current) throw new Error('case not found');
+  if (current.version !== input.expectedVersion) {
+    throw new CaseVersionConflictError(input.caseId, input.expectedVersion, current.version);
+  }
+
+  assertCaseLifecycleTransition(current.lifecycleState as CaseLifecycleState, input.toState);
+  const nextVersion = current.version + 1;
+  const terminal = TERMINAL_CASE_STATES.has(input.toState);
+  const updated = await tx
+    .update(cases)
+    .set({
+      lifecycleState: input.toState,
+      version: nextVersion,
+      isActiveEpoch: !terminal,
+      closedAt: terminal ? new Date() : null,
+    })
+    .where(
+      and(
+        eq(cases.tenantId, ctx.tenantId),
+        eq(cases.id, input.caseId),
+        eq(cases.version, input.expectedVersion),
+      ),
+    )
+    .returning({ id: cases.id });
+  if (updated.length !== 1) {
+    throw new CaseVersionConflictError(input.caseId, input.expectedVersion, nextVersion);
+  }
+
+  const transitionId = input.transitionId ?? `trans_${randomUUID()}`;
+  await tx.insert(caseTransitions).values({
+    id: transitionId,
+    tenantId: ctx.tenantId,
+    caseId: input.caseId,
+    fromState: current.lifecycleState,
+    toState: input.toState,
+    reason: input.reason,
+    evidenceIds: input.evidenceIds ?? [],
+    actorId: input.actorId ?? null,
+    expectedVersion: input.expectedVersion,
+  });
+  await tx.insert(auditEntries).values({
+    id: input.auditId ?? `audit_${randomUUID()}`,
+    tenantId: ctx.tenantId,
+    artifactType: 'CASE_TRANSITION',
+    artifactId: transitionId,
+    actorId: input.actorId ?? null,
+    actorRole: input.actorRole ?? null,
+    details: {
+      operation: 'case_transition',
+      case_id: input.caseId,
+      from_state: current.lifecycleState,
+      to_state: input.toState,
+      reason: input.reason,
+      expected_version: input.expectedVersion,
+      resource_version: nextVersion,
+    },
+  });
+  return nextVersion;
 }
 
 /**
@@ -265,51 +375,7 @@ export async function transitionCase(
   input: TransitionCaseInput,
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    const rows = await tx
-      .select()
-      .from(cases)
-      .where(and(eq(cases.tenantId, ctx.tenantId), eq(cases.id, input.caseId)))
-      .limit(1);
-    const current = rows[0];
-    if (!current) throw new Error(`case not found: ${input.caseId}`);
-    if (current.version !== input.expectedVersion) {
-      throw new CaseVersionConflictError(input.caseId, input.expectedVersion, current.version);
-    }
-
-    assertCaseLifecycleTransition(current.lifecycleState as CaseLifecycleState, input.toState);
-
-    const terminal = TERMINAL_CASE_STATES.has(input.toState);
-    const updated = await tx
-      .update(cases)
-      .set({
-        lifecycleState: input.toState,
-        version: current.version + 1,
-        isActiveEpoch: !terminal,
-        closedAt: terminal ? new Date() : null,
-      })
-      .where(
-        and(
-          eq(cases.tenantId, ctx.tenantId),
-          eq(cases.id, input.caseId),
-          eq(cases.version, input.expectedVersion),
-        ),
-      )
-      .returning({ id: cases.id });
-    if (updated.length !== 1) {
-      throw new CaseVersionConflictError(input.caseId, input.expectedVersion, current.version + 1);
-    }
-
-    await tx.insert(caseTransitions).values({
-      id: `trans_${randomUUID()}`,
-      tenantId: ctx.tenantId,
-      caseId: input.caseId,
-      fromState: current.lifecycleState,
-      toState: input.toState,
-      reason: input.reason,
-      evidenceIds: input.evidenceIds ?? [],
-      actorId: input.actorId ?? null,
-      expectedVersion: input.expectedVersion,
-    });
+    await transitionCaseInTransaction(tx, ctx, input);
   });
 }
 

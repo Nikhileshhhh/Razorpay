@@ -21,6 +21,7 @@ function baseInput(overrides: Partial<PolicyInputProjection> = {}): PolicyInputP
     outcome_version: 0,
     approval_status: null,
     policy_bundle_version: 'moneytrace_demo_v1',
+    reconciliation_state: null,
     ...overrides,
   };
 }
@@ -90,15 +91,93 @@ describe('policy engine (backend PRD §12.2 exhaustive default-deny matrix)', ()
     expect(result.decision).toBe('ADVISE');
   });
 
-  it('denies CLOSE_SYNTHETIC_RECEIVABLE_AFTER_RECONCILIATION (Gate B4 scope, not yet available)', () => {
+  it('denies CLOSE without a reconciliation projection (generic evaluate-policy path)', () => {
     const result = evaluatePolicy(
       baseInput({
         action_type: 'CLOSE_SYNTHETIC_RECEIVABLE_AFTER_RECONCILIATION',
         amount_impact: null,
+        reconciliation_state: null,
       }),
     );
     expect(result.decision).toBe('DENY');
-    expect(result.matchedRules).toContain('RECONCILIATION_CLOSURE_NOT_YET_AVAILABLE');
+    expect(result.matchedRules).toContain('RECONCILIATION_CLOSURE_NOT_AUTHORIZED');
+  });
+
+  it('allows CLOSE automatically ONLY with a valid unique allocation projection (ADR 0002 D5)', () => {
+    const result = evaluatePolicy(
+      baseInput({
+        actor_role: 'worker',
+        action_type: 'CLOSE_SYNTHETIC_RECEIVABLE_AFTER_RECONCILIATION',
+        amount_impact: { amount_minor: '0', currency: 'INR' },
+        reconciliation_state: {
+          allocation_id: 'alloc_1',
+          expectation_id: 'exp_1',
+          status: 'ALLOCATED',
+          closure_status: 'NONE',
+          reversal_status: 'NONE',
+          resource_version: 0,
+        },
+      }),
+    );
+    expect(result.decision).toBe('ALLOW_AUTOMATIC');
+    expect(result.requiredRole).toBe('worker');
+    expect(result.matchedRules).toContain('RECEIVABLE_CLOSURE_AFTER_UNIQUE_RECONCILIATION');
+  });
+
+  it.each([
+    ['a user actor', { actor_role: 'executor' as const }],
+    ['the wrong authority', { actor_role: 'worker' as const, authority_level: 'L2' as const }],
+    ['a missing amount', { actor_role: 'worker' as const, amount_impact: null }],
+    [
+      'a non-zero amount',
+      {
+        actor_role: 'worker' as const,
+        amount_impact: { amount_minor: '1', currency: 'INR' as const },
+      },
+    ],
+  ])('denies CLOSE for %s', (_description, unsafe) => {
+    const result = evaluatePolicy(
+      baseInput({
+        action_type: 'CLOSE_SYNTHETIC_RECEIVABLE_AFTER_RECONCILIATION',
+        authority_level: 'L3',
+        amount_impact: { amount_minor: '0', currency: 'INR' },
+        reconciliation_state: {
+          allocation_id: 'alloc_1',
+          expectation_id: 'exp_1',
+          status: 'ALLOCATED',
+          closure_status: 'NONE',
+          reversal_status: 'NONE',
+          resource_version: 0,
+        },
+        ...unsafe,
+      }),
+    );
+    expect(result.decision).toBe('DENY');
+    expect(result.matchedRules).toContain('RECONCILIATION_CLOSURE_NOT_AUTHORIZED');
+  });
+
+  it('denies CLOSE when the allocation is already closed or reversed', () => {
+    for (const bad of [
+      { closure_status: 'CLOSED' as const, reversal_status: 'NONE' as const },
+      { closure_status: 'NONE' as const, reversal_status: 'REVERSED' as const },
+    ]) {
+      const result = evaluatePolicy(
+        baseInput({
+          actor_role: 'worker',
+          action_type: 'CLOSE_SYNTHETIC_RECEIVABLE_AFTER_RECONCILIATION',
+          amount_impact: { amount_minor: '0', currency: 'INR' },
+          reconciliation_state: {
+            allocation_id: 'alloc_1',
+            expectation_id: 'exp_1',
+            status: 'ALLOCATED',
+            resource_version: 0,
+            ...bad,
+          },
+        }),
+      );
+      expect(result.decision).toBe('DENY');
+      expect(result.matchedRules).toContain('RECONCILIATION_CLOSURE_NOT_AUTHORIZED');
+    }
   });
 
   it('is a pure function: identical input always yields an identical decision', () => {

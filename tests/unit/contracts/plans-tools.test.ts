@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { PlanTemplateId, ToolActionId, ToolParameters } from '../../../src/contracts/plans.js';
+import {
+  Plan,
+  PlanTemplateId,
+  ToolActionId,
+  ToolParameters,
+} from '../../../src/contracts/plans.js';
 
 describe('registered tools and plan templates', () => {
   it('accepts exactly the four documented tool ids', () => {
@@ -14,16 +19,43 @@ describe('registered tools and plan templates', () => {
     expect(ToolActionId.options).toHaveLength(4);
   });
 
-  it('accepts only the two documented plan templates (Gate B3 adds SUPPRESS_DUPLICATE_RECOVERY)', () => {
+  it('accepts only the three documented plan templates (Gate B4 adds CLOSE_RECEIVABLE_AFTER_RECONCILIATION)', () => {
     expect(PlanTemplateId.parse('OPEN_TRANSFER_REMEDIATION_WITH_APPROVAL')).toBeTruthy();
     expect(PlanTemplateId.parse('SUPPRESS_DUPLICATE_RECOVERY')).toBeTruthy();
-    expect(PlanTemplateId.options).toHaveLength(2);
+    expect(PlanTemplateId.parse('CLOSE_RECEIVABLE_AFTER_RECONCILIATION')).toBeTruthy();
+    expect(PlanTemplateId.options).toHaveLength(3);
     expect(PlanTemplateId.safeParse('SOME_OTHER_TEMPLATE').success).toBe(false);
   });
 
   it('a plan-template id is not a tool/action id', () => {
     expect(ToolActionId.safeParse('OPEN_TRANSFER_REMEDIATION_WITH_APPROVAL').success).toBe(false);
     expect(PlanTemplateId.safeParse('SIMULATE_TRANSFER_REMEDIATION').success).toBe(false);
+  });
+
+  it('requires the CLOSE plan to be L3 with exactly zero INR impact', () => {
+    const close = {
+      schema_version: '1.0',
+      plan_id: 'plan_close_1',
+      case_id: 'case_close_1',
+      template_id: 'CLOSE_RECEIVABLE_AFTER_RECONCILIATION',
+      version: 0,
+      parameters: {
+        tool_id: 'CLOSE_SYNTHETIC_RECEIVABLE_AFTER_RECONCILIATION',
+        expectation_id: 'exp_1',
+      },
+      plan_hash: `sha256:${'a'.repeat(64)}`,
+      authority_level: 'L3',
+      maximum_amount_impact: { amount_minor: '0', currency: 'INR' },
+      status: 'AUTHORIZED',
+    };
+    expect(Plan.safeParse(close).success).toBe(true);
+    expect(Plan.safeParse({ ...close, authority_level: 'L2' }).success).toBe(false);
+    expect(
+      Plan.safeParse({
+        ...close,
+        maximum_amount_impact: { amount_minor: '1', currency: 'INR' },
+      }).success,
+    ).toBe(false);
   });
 
   it('accepts strict typed tool parameters', () => {

@@ -161,6 +161,17 @@ describe('GET /v1/cases and /v1/cases/:id', () => {
     expect(found.control_id).toBe('CTRL-01');
   });
 
+  it('accepts a bounded numeric limit from the URL query string', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/cases?state=open&sort=-exposure_amount_minor&limit=1',
+      headers: { 'x-demo-user-id': 'user_viewer' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.items).toHaveLength(1);
+    expect(res.json().data.page_info.has_more).toBe(true);
+  });
+
   it('cross-tenant: the other-tenant user never sees ten_demo cases', async () => {
     const res = await app.inject({
       method: 'GET',

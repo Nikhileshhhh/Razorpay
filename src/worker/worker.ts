@@ -9,6 +9,7 @@ import { getDb } from '../config/db.js';
 import { dispatchPendingOutbox } from './outbox-dispatcher.js';
 import { registerB2JobHandlers } from './job-handlers.js';
 import { registerB3JobHandlers } from './job-handlers-b3.js';
+import { registerB4JobHandlers, writeWorkerHeartbeat } from './job-handlers-b4.js';
 
 /**
  * Durable-jobs worker entry point.
@@ -24,7 +25,7 @@ export function createBoss(env: Env): PgBoss {
   if (!env.DATABASE_URL) {
     throw new Error('DATABASE_URL is required to start the MoneyTrace worker.');
   }
-  return new PgBoss({ connectionString: env.DATABASE_URL });
+  return new PgBoss({ connectionString: env.DATABASE_URL, max: 4 });
 }
 
 export async function startWorker(env: Env = loadEnv()): Promise<PgBoss> {
@@ -39,6 +40,8 @@ export async function startWorker(env: Env = loadEnv()): Promise<PgBoss> {
   await boss.start();
   await registerB2JobHandlers(boss, db);
   await registerB3JobHandlers(boss, db, env);
+  await registerB4JobHandlers(boss, db, env);
+  await writeWorkerHeartbeat(db);
   await dispatchPendingOutbox(db, boss);
   const outboxTimer = setInterval(() => {
     void dispatchPendingOutbox(db, boss).catch(() => {
@@ -46,7 +49,16 @@ export async function startWorker(env: Env = loadEnv()): Promise<PgBoss> {
     });
   }, 500);
   outboxTimer.unref();
-  boss.on('stopped', () => clearInterval(outboxTimer));
+  const heartbeatTimer = setInterval(() => {
+    void writeWorkerHeartbeat(db).catch(() => {
+      logger.error({ msg: 'worker heartbeat failed', err: { kind: 'worker_heartbeat' } });
+    });
+  }, 2_000);
+  heartbeatTimer.unref();
+  boss.on('stopped', () => {
+    clearInterval(outboxTimer);
+    clearInterval(heartbeatTimer);
+  });
   logger.info({ msg: 'MoneyTrace worker started', environment: env.MONEYTRACE_ENV });
   return boss;
 }

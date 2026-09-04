@@ -22,7 +22,7 @@ import { createServer, type ViteDevServer } from 'vite';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const VITE_CONFIG = resolve(repoRoot, 'vite.config.ts');
 const HOST = '127.0.0.1';
-const PORT = 5173;
+const PORT = 5175;
 
 interface WorkerFixtures {
   viteServer: ViteDevServer;

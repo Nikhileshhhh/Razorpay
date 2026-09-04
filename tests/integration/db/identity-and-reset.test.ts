@@ -65,14 +65,25 @@ describe('identity seeding and deterministic reset', () => {
     expect(rows.rows[0]?.n).toBe(expectedCount);
   });
 
-  it('reset is idempotent: running it twice yields an identical manifest hash', async () => {
-    const first = await resetDemoDatabase(pool, db, 'demo');
-    const second = await resetDemoDatabase(pool, db, 'demo');
-    expect(second.manifestHash).toBe(first.manifestHash);
-    // And the identity fixture is restored exactly.
-    const viewer = await resolveIdentity(db, 'user_viewer');
-    expect(viewer?.tenantContext.tenantId).toBe('ten_demo');
-  });
+  // Two full resets, each driving the real 500-record dataset through
+  // genuine service calls (backend PRD §16.1) — measured at ~2 minutes each,
+  // well beyond Vitest's 30s default `testTimeout`.
+  const RESET_TEST_TIMEOUT_MS = 300_000;
+
+  it(
+    'reset is idempotent: running it twice yields an identical manifest hash',
+    async () => {
+      const first = await resetDemoDatabase(pool, db, 'demo');
+      const second = await resetDemoDatabase(pool, db, 'demo');
+      expect(second.manifestHash).toBe(first.manifestHash);
+      expect(first.resourceVersion).toBe(0);
+      expect(second.resourceVersion).toBe(0);
+      // And the identity fixture is restored exactly.
+      const viewer = await resolveIdentity(db, 'user_viewer');
+      expect(viewer?.tenantContext.tenantId).toBe('ten_demo');
+    },
+    RESET_TEST_TIMEOUT_MS,
+  );
 
   it('reset refuses to run outside a demo-like environment', async () => {
     await expect(resetDemoDatabase(pool, db, 'production')).rejects.toThrow(/demo\/buildathon/i);
@@ -216,13 +227,40 @@ describe('identity seeding and deterministic reset', () => {
       db.select().from(schema.entityLinkReviews),
       db.select().from(schema.auditEntries),
       db.select().from(schema.invariantEvaluations),
+      db.select().from(schema.demoDatasetRecords),
     ]);
-    for (const rows of postResetCounts) expect(rows).toHaveLength(0);
+    // Gate B4 reset replaces arbitrary fixtures with the registered 500-record
+    // dataset ledger and its deterministic cases/audit, while old
+    // relationship and review fixtures remain absent. Each of the 500
+    // dataset-ledger records is produced through the real acceptance/
+    // projection/control (and, for one record, full investigation/policy/
+    // action/verification) pipeline (backend PRD §16.1, ADR 0002 D9) — so it
+    // genuinely spans several raw `ingest_events`/`case_transitions` rows
+    // each, not a fixed 1:1 count; the exactly-500 guarantee is the
+    // `demo_dataset_records` ledger itself, and the case count is exactly
+    // deterministic by construction (16 unresolved CTRL-01 + 4 unsafe-
+    // candidate CTRL-01 + 1 CTRL-04 duplicate-recovery-prevention).
+    expect(postResetCounts[0].length).toBeGreaterThan(0);
+    expect(postResetCounts[1]).toHaveLength(21);
+    expect(postResetCounts[2].length).toBeGreaterThan(0);
+    expect(postResetCounts[3]).toHaveLength(0);
+    // Real projection now runs for every dataset record, which genuinely
+    // creates direct-identifier provenance edges between related evidence
+    // (e.g. order/payment/transfer chains) — architecture §10.3. Only
+    // human-reviewed candidate decisions (`entity_link_reviews`) remain
+    // absent, since nothing in dataset generation calls that review path.
+    expect(postResetCounts[4].length).toBeGreaterThan(0);
+    expect(postResetCounts[5]).toHaveLength(0);
+    expect(postResetCounts[6].length).toBeGreaterThan(0);
+    // Real control evaluation runs for every dataset record now (unlike a
+    // hand-rolled fixture insert), so this is genuinely populated post-reset.
+    expect(postResetCounts[7].length).toBeGreaterThan(0);
+    expect(postResetCounts[8]).toHaveLength(500);
 
-    // The identity fixture is the only thing reset re-populates.
+    // Identity is also restored alongside the registered dataset.
     const viewer = await resolveIdentity(db, 'user_viewer');
     expect(viewer?.tenantContext.tenantId).toBe('ten_demo');
-  });
+  }, 180_000);
 
   it('a failure during reseeding rolls back the destructive truncate (data survives)', async () => {
     await seedIdentity(db);

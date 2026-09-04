@@ -30,13 +30,12 @@ export function registerInvestigationRoutes(app: FastifyInstance, db: Database):
         caseId: params.data.id,
         expectedCaseVersion: body.data.expected_case_version,
         actorId: req.identity!.userId,
-        actorRole: 'investigator',
       });
       return reply.code(202).send(
         InvestigationAcceptedResponse.parse({
           schema_version: '1.0',
           request_id: req.id,
-          resource_version: body.data.expected_case_version ?? 0,
+          resource_version: result.resourceVersion,
           data: { investigation_id: result.requestId, status: 'accepted' },
         }),
       );

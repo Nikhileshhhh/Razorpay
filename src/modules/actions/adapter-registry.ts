@@ -50,11 +50,24 @@ function dispatchSyntheticRecovery(input: AdapterDispatchInput): AdapterDispatch
   return { outcome: 'ACKNOWLEDGED', externalReference: `synthetic_recovery_${input.actionId}` };
 }
 
+/** Synthetic ERP adapter: ACK means the closure request was accepted only. */
+function dispatchSyntheticErp(input: AdapterDispatchInput): AdapterDispatchResult {
+  if (input.forcedOutcome) {
+    return {
+      outcome: input.forcedOutcome,
+      externalReference:
+        input.forcedOutcome === 'FAILED' ? null : `synthetic_erp_${input.actionId}`,
+    };
+  }
+  return { outcome: 'ACKNOWLEDGED', externalReference: `synthetic_erp_${input.actionId}` };
+}
+
 type Adapter = (input: AdapterDispatchInput) => AdapterDispatchResult;
 
 const ADAPTERS: Partial<Record<ToolActionId, Adapter>> = {
   SIMULATE_TRANSFER_REMEDIATION: dispatchSyntheticRoute,
   SUPPRESS_SIMULATED_RECOVERY: dispatchSyntheticRecovery,
+  CLOSE_SYNTHETIC_RECEIVABLE_AFTER_RECONCILIATION: dispatchSyntheticErp,
 };
 
 export class NoAdapterRegisteredError extends Error {

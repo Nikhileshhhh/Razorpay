@@ -19,3 +19,18 @@ export const BankCreditObservedData = z.object({ utr: Utr, value_date: DateOnly 
 
 /** Settlement events preserve their scope so recipient vs merchant never conflate. */
 export const SettlementScopedData = z.object({ settlement_scope: SettlementScope }).strict();
+
+/**
+ * A terminal `SettlementObserved` (MoneyTrace normalization) may preserve the
+ * recipient settlement's typed UTR and value date so verification can cross-check
+ * them against the independent bank credit (ADR 0002 D7). These are OPTIONAL and
+ * NEVER make settlement bank-credit proof — the bank authority bucket is still
+ * satisfied only by a signed `SYNTHETIC_BANK` `BankCreditObserved`.
+ */
+export const SettlementObservedData = z
+  .object({
+    settlement_scope: SettlementScope,
+    utr: Utr.nullish(),
+    value_date: DateOnly.nullish(),
+  })
+  .strict();

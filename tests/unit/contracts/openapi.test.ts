@@ -5,7 +5,7 @@ import { buildOpenApiDocument } from '../../../src/contracts/openapi.js';
 const EXPECTED_STATUSES: Record<string, number[]> = {
   'post /v1/events': [202, 400, 401, 403, 409, 413, 503],
   'post /v1/webhooks/razorpay': [202, 400, 401, 409, 413, 503],
-  'post /v1/imports': [202, 400, 413, 422],
+  'post /v1/imports': [200, 202, 400, 401, 403, 409, 413, 422, 429, 503],
   'get /v1/cases': [200, 400, 403],
   'get /v1/cases/{id}': [200, 403, 404],
   'get /v1/cases/{id}/money-path': [200, 403, 404, 422],
@@ -14,22 +14,26 @@ const EXPECTED_STATUSES: Record<string, number[]> = {
   'post /v1/cases/{id}/assign': [200, 403, 409, 422],
   'post /v1/cases/{id}/notes': [201, 403, 409, 422],
   'post /v1/cases/{id}/links/{linkId}/decision': [200, 403, 409, 422],
-  'post /v1/cases/{id}/investigations': [202, 409, 422, 503],
-  'post /v1/cases/{id}/evaluate-policy': [200, 409, 422],
-  'post /v1/cases/{id}/request-approval': [200, 409, 422],
-  'post /v1/cases/{id}/approve': [200, 403, 409, 422],
-  'post /v1/cases/{id}/reject': [200, 403, 409, 422],
-  'post /v1/cases/{id}/request-more-evidence': [200, 403, 409, 422],
-  'get /v1/approvals': [200, 400, 403],
-  'get /v1/cases/{id}/control-loop': [200, 403, 404],
-  'post /v1/cases/{id}/execute': [202, 403, 409, 422],
-  'get /v1/cases/{id}/verification': [200, 403, 404],
-  'post /v1/actions/{id}/verification-checks': [200, 409, 422],
-  'get /v1/cases/{id}/audit': [200, 403, 404],
-  'post /v1/agent-results': [201, 400, 409, 422],
-  'get /v1/agent-results/{id}': [200, 403, 404],
-  'post /v1/demo/reset': [200, 403, 409],
-  'post /v1/demo/scenarios/{id}/advance': [200, 403, 409],
+  'post /v1/cases/{id}/investigations': [202, 401, 403, 409, 422, 503],
+  'post /v1/cases/{id}/evaluate-policy': [200, 401, 403, 409, 422, 503],
+  'post /v1/cases/{id}/request-approval': [200, 401, 403, 409, 422, 503],
+  'post /v1/cases/{id}/approve': [200, 401, 403, 409, 422, 503],
+  'post /v1/cases/{id}/reject': [200, 401, 403, 409, 422, 503],
+  'post /v1/cases/{id}/request-more-evidence': [200, 401, 403, 409, 422, 503],
+  'get /v1/approvals': [200, 400, 401, 403, 503],
+  'get /v1/cases/{id}/control-loop': [200, 401, 403, 404, 503],
+  'post /v1/cases/{id}/execute': [202, 401, 403, 409, 422, 503],
+  'get /v1/cases/{id}/verification': [200, 400, 401, 403, 404, 503],
+  'post /v1/actions/{id}/verification-checks': [200, 400, 401, 403, 404, 409, 422, 429, 503],
+  'get /v1/cases/{id}/audit': [200, 400, 401, 403, 404, 503],
+  'get /v1/cases/{id}/audit/export': [200, 400, 401, 403, 404, 503],
+  'post /v1/agent-results': [200, 201, 400, 401, 403, 409, 413, 422, 429, 503],
+  'get /v1/agent-results/{id}': [200, 400, 401, 403, 404, 503],
+  'get /v1/overview': [200, 400, 401, 403, 503],
+  'get /v1/data-health': [200, 400, 401, 403, 503],
+  'get /v1/demo/status': [200, 400, 401, 403, 503],
+  'post /v1/demo/reset': [200, 400, 401, 403, 409, 422, 429, 503],
+  'post /v1/demo/scenarios/{id}/advance': [200, 400, 401, 403, 409, 422, 429, 503],
 };
 
 function statusMatrix(doc: ReturnType<typeof buildOpenApiDocument>): Record<string, number[]> {
@@ -92,7 +96,11 @@ describe('OpenAPI document', () => {
     const json = JSON.stringify(doc);
     const refCount = json.split('"$ref"').length - 1;
     expect(refCount).toBeGreaterThan(50);
-    expect(json.length).toBeLessThan(300_000);
+    // Budget is a duplication guard, not a hard cap on legitimate schema
+    // growth; nudged up from 300_000 for the Gate B4 remediation's
+    // queued/completed/failed scenario-status fields (still well under 2x
+    // the $ref-reuse floor this test also checks).
+    expect(json.length).toBeLessThan(305_000);
   });
 
   it('is generated deterministically', () => {

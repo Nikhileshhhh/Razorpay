@@ -33,7 +33,6 @@ export function registerPolicyRoutes(app: FastifyInstance, db: Database): void {
         planId: body.data.plan_id,
         expectedPlanVersion: body.data.expected_plan_version,
         actorId: req.identity!.userId,
-        actorRole: 'case_manager',
       });
       return reply.code(200).send(
         PolicyDecisionResponse.parse({

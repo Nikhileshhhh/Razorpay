@@ -9,7 +9,10 @@ import { boundedArray, boundedString, LIMITS } from './limits.js';
 export const PaginationQuery = z
   .object({
     cursor: boundedString(LIMITS.KEY_MAX).optional(),
-    limit: z.number().int().min(1).max(100).optional(),
+    // Fastify supplies URL query values as strings. Coercion happens inside
+    // the shared bounded contract so `?limit=3` is validated consistently by
+    // every list route instead of being rejected as a non-number.
+    limit: z.coerce.number().int().min(1).max(100).optional(),
   })
   .strict();
 export type PaginationQuery = z.infer<typeof PaginationQuery>;

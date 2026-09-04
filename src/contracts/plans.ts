@@ -38,6 +38,7 @@ export type ToolActionId = z.infer<typeof ToolActionId>;
 export const PlanTemplateId = z.enum([
   'OPEN_TRANSFER_REMEDIATION_WITH_APPROVAL',
   'SUPPRESS_DUPLICATE_RECOVERY',
+  'CLOSE_RECEIVABLE_AFTER_RECONCILIATION',
 ]);
 export type PlanTemplateId = z.infer<typeof PlanTemplateId>;
 
@@ -169,6 +170,11 @@ export const PLAN_TEMPLATE_TOOL_MAP: Record<
 > = {
   OPEN_TRANSFER_REMEDIATION_WITH_APPROVAL: ['SIMULATE_TRANSFER_REMEDIATION'],
   SUPPRESS_DUPLICATE_RECOVERY: ['SUPPRESS_SIMULATED_RECOVERY'],
+  // Gate B4 (ADR 0002 D5): the receivable-closure plan binds ONLY to the CLOSE
+  // tool. It is an automatic action authorized by a persisted reconciliation
+  // projection + a reservation-time hard gate, never by the generic
+  // evaluate-policy endpoint.
+  CLOSE_RECEIVABLE_AFTER_RECONCILIATION: ['CLOSE_SYNTHETIC_RECEIVABLE_AFTER_RECONCILIATION'],
 };
 
 /** FindingCode -> the ONE plan template the model may recommend for that finding
@@ -226,9 +232,32 @@ const SuppressDuplicateRecoveryPlan = z
   })
   .strict();
 
+/**
+ * Gate B4 (ADR 0002 D5): the receivable-closure plan binds structurally to
+ * {@link CloseReceivableParams} (a typed `expectation_id`, no money, no free-form
+ * ledger parameter). It is `L3` with zero money impact.
+ */
+const CloseReceivablePlan = z
+  .object({
+    schema_version: SchemaVersion,
+    plan_id: PlanId,
+    case_id: CaseId,
+    template_id: z.literal('CLOSE_RECEIVABLE_AFTER_RECONCILIATION'),
+    version: ResourceVersion,
+    parameters: CloseReceivableParams,
+    plan_hash: Sha256Hash,
+    authority_level: z.literal('L3'),
+    maximum_amount_impact: z
+      .object({ amount_minor: z.literal('0'), currency: z.literal('INR') })
+      .strict(),
+    status: PlanStatus,
+  })
+  .strict();
+
 /** The single authoritative Plan schema (runtime AND OpenAPI). */
 export const Plan = z.discriminatedUnion('template_id', [
   OpenTransferRemediationPlan,
   SuppressDuplicateRecoveryPlan,
+  CloseReceivablePlan,
 ]);
 export type Plan = z.infer<typeof Plan>;

@@ -14,6 +14,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import pg from 'pg';
+import { loadDotenv } from '../../src/config/dotenv.js';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const migrationsDir = join(repoRoot, 'db', 'migrations');
@@ -69,6 +70,7 @@ export async function runMigrations(databaseUrl: string): Promise<MigrationResul
 
 const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isDirectRun) {
+  loadDotenv();
   runMigrations(resolveDatabaseUrl())
     .then((results) => {
       for (const r of results) console.log(`[migrate] ${r.status}: ${r.file}`);

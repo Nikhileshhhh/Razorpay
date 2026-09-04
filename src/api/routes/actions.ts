@@ -8,6 +8,8 @@ import {
   ActionBasisStaleError,
   ActionApprovalMissingError,
   ActionIdempotencyBodyConflictError,
+  ActionEnvironmentDeniedError,
+  getActionResourceVersion,
 } from '../../modules/actions/action-service.js';
 import { problem } from './problem.js';
 
@@ -29,13 +31,17 @@ export function registerActionRoutes(app: FastifyInstance, db: Database): void {
         planId: body.data.plan_id,
         decisionBasisHash: body.data.decision_basis_hash,
         actorId: req.identity!.userId,
-        actorRole: 'executor',
       });
+      const resourceVersion = await getActionResourceVersion(
+        db,
+        req.identity!.tenantContext,
+        action.action_id,
+      );
       return reply.code(202).send(
         ActionResponse.parse({
           schema_version: '1.0',
           request_id: req.id,
-          resource_version: action.attempt_count,
+          resource_version: resourceVersion,
           data: action,
         }),
       );
@@ -50,6 +56,9 @@ export function registerActionRoutes(app: FastifyInstance, db: Database): void {
         return reply
           .code(403)
           .send(problem(req, 'APPROVAL_FORBIDDEN', 'no current approved approval'));
+      }
+      if (error instanceof ActionEnvironmentDeniedError) {
+        return reply.code(403).send(problem(req, 'POLICY_DENIED', 'actions are disabled'));
       }
       if (error instanceof ActionIdempotencyBodyConflictError) {
         return reply

@@ -33,12 +33,14 @@ describe('closed typed adapter registry (backend PRD §12.4/§17: simulated Rout
     );
   });
 
-  it('has NO adapter for CLOSE_SYNTHETIC_RECEIVABLE_AFTER_RECONCILIATION (Gate B4 scope)', () => {
-    expect(() =>
-      dispatchThroughAdapter('CLOSE_SYNTHETIC_RECEIVABLE_AFTER_RECONCILIATION', {
-        actionId: 'action_5',
-      }),
-    ).toThrow(NoAdapterRegisteredError);
+  it('dispatches CLOSE only through the synthetic ERP adapter and returns an ACK, not proof', () => {
+    const result = dispatchThroughAdapter('CLOSE_SYNTHETIC_RECEIVABLE_AFTER_RECONCILIATION', {
+      actionId: 'action_5',
+    });
+    expect(result).toEqual({
+      outcome: 'ACKNOWLEDGED',
+      externalReference: 'synthetic_erp_action_5',
+    });
   });
 
   it('supports forced outcomes for deterministic fault-injection testing (FAILED/OUTCOME_UNKNOWN)', () => {

@@ -1,7 +1,7 @@
 import { argv } from 'node:process';
 import { pathToFileURL } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { loadEnv, type Env } from '../config/env.js';
+import { assertAuthenticationEnvironment, loadEnv, type Env } from '../config/env.js';
 import { createLogger, REDACT_PATHS } from '../config/logger.js';
 import { toSafeError } from '../config/errors.js';
 import { loadDotenv } from '../config/dotenv.js';
@@ -14,6 +14,13 @@ import { registerInvestigationRoutes } from './routes/investigations.js';
 import { registerPolicyRoutes } from './routes/policy.js';
 import { registerApprovalRoutes } from './routes/approvals.js';
 import { registerActionRoutes } from './routes/actions.js';
+import { installSafeErrorHandler } from './safe-error-handler.js';
+import { registerB4CoreRoutes } from './routes/b4-core.js';
+import { registerB4DemoRoutes } from './routes/b4-demo.js';
+import { buildOpenApiDocument } from '../contracts/openapi.js';
+import { ReadinessResponse } from '../contracts/api-endpoints.js';
+import { workerHeartbeat } from '../config/db-schema.js';
+import { eq, sql } from 'drizzle-orm';
 
 /**
  * Fastify API entry point.
@@ -26,6 +33,7 @@ import { registerActionRoutes } from './routes/actions.js';
  * at all (e.g. the built-artifact smoke check, which only exercises `/health`).
  */
 export function buildServer(env: Env = loadEnv()): FastifyInstance {
+  assertAuthenticationEnvironment(env);
   // Use Fastify's own pino with our shared redaction paths so secrets are never
   // logged. (Passing a pre-built pino instance changes Fastify's logger generic
   // and fights the FastifyInstance return type, so we pass options instead.)
@@ -36,6 +44,7 @@ export function buildServer(env: Env = loadEnv()): FastifyInstance {
       redact: { paths: REDACT_PATHS, censor: '[REDACTED]' },
     },
   });
+  installSafeErrorHandler(app);
 
   app.get('/health', async () => {
     const body: HealthResponse = {
@@ -46,6 +55,7 @@ export function buildServer(env: Env = loadEnv()): FastifyInstance {
     };
     return HealthResponse.parse(body);
   });
+  app.get('/openapi.json', async () => buildOpenApiDocument());
 
   if (env.DATABASE_URL) {
     const db = getDb(env.DATABASE_URL);
@@ -56,6 +66,44 @@ export function buildServer(env: Env = loadEnv()): FastifyInstance {
     registerPolicyRoutes(app, db);
     registerApprovalRoutes(app, db);
     registerActionRoutes(app, db);
+    registerB4CoreRoutes(app, db, env);
+    registerB4DemoRoutes(app, db, env);
+    app.get('/ready', async (req, reply) => {
+      let database: 'up' | 'down' = 'down';
+      let worker: 'up' | 'stale' | 'down' = 'down';
+      try {
+        await db.execute(sql`select 1`);
+        database = 'up';
+        const beats = await db
+          .select({ lastBeatAt: workerHeartbeat.lastBeatAt, status: workerHeartbeat.status })
+          .from(workerHeartbeat)
+          .where(eq(workerHeartbeat.id, 'moneytrace-worker'))
+          .limit(1);
+        if (beats[0]?.status === 'up') {
+          worker = Date.now() - beats[0].lastBeatAt.getTime() <= 10_000 ? 'up' : 'stale';
+        }
+      } catch {
+        database = 'down';
+      }
+      const status = database === 'up' && worker === 'up' ? 'ready' : 'not_ready';
+      return reply.code(status === 'ready' ? 200 : 503).send(
+        ReadinessResponse.parse({
+          schema_version: '1.0',
+          request_id: req.id,
+          data: { status, database, worker },
+        }),
+      );
+    });
+  } else {
+    app.get('/ready', async (req, reply) =>
+      reply.code(503).send(
+        ReadinessResponse.parse({
+          schema_version: '1.0',
+          request_id: req.id,
+          data: { status: 'not_ready', database: 'down', worker: 'down' },
+        }),
+      ),
+    );
   }
 
   return app;

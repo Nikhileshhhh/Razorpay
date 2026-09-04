@@ -28,6 +28,7 @@ describe('error model', () => {
         'APPROVAL_STALE',
         'APPROVAL_FORBIDDEN',
         'IDEMPOTENCY_BODY_CONFLICT',
+        'AGENT_ATTRIBUTION_CONFLICT',
         'OUTCOME_UNKNOWN',
         'CURRENCY_MISMATCH',
         'RECONCILIATION_AMBIGUOUS',

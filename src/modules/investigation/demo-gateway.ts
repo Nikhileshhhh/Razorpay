@@ -59,6 +59,21 @@ function transferRecordsConflict(records: readonly ClassifiedEvidenceItem[]): bo
   return recipients.size > 1 || amounts.size > 1;
 }
 
+function bankRecordsConflict(records: readonly ClassifiedEvidenceItem[]): boolean {
+  if (records.length < 2) return false;
+  const signatures = new Set(
+    records.map((record) =>
+      JSON.stringify({
+        amount: record.amountMinor?.toString() ?? null,
+        recipient: recipientOf(record),
+        utr: record.data?.utr ?? null,
+        value_date: record.data?.value_date ?? null,
+      }),
+    ),
+  );
+  return signatures.size > 1;
+}
+
 function classify(request: ModelGatewayRequest): ModelInvestigationOutput {
   const { pool, controlId } = request;
 
@@ -213,6 +228,39 @@ function classify(request: ModelGatewayRequest): ModelInvestigationOutput {
       evidence_coverage: 'complete_for_finding',
       safe_to_act: true,
       recommended_plan_template_id: FINDING_PLAN_TEMPLATE_MAP.DUPLICATE_RECOVERY_RISK,
+    };
+  }
+
+  if (controlId === 'CTRL-05') {
+    const bankCredits = byType(pool.items, 'bank_credit');
+    if (bankRecordsConflict(bankCredits)) {
+      return {
+        schema_version: '1.0',
+        result_type: 'ABSTENTION',
+        abstention_reason: 'CONFLICTING_EVIDENCE',
+        summary: 'Authoritative bank records disagree on settlement identity.',
+        explanation:
+          'The candidate bank records differ by UTR, value date, recipient, or amount, so MoneyTrace preserves the open exposure and requests resolving evidence.',
+        supporting_evidence_ids: bankCredits.map((record) => record.evidenceId),
+        contradicting_evidence_ids: bankCredits.map((record) => record.evidenceId),
+        missing_evidence_types: [],
+        confidence_band: 'low',
+        evidence_coverage: 'partial',
+        recommended_plan_template_id: null,
+      };
+    }
+    return {
+      schema_version: '1.0',
+      result_type: 'ABSTENTION',
+      abstention_reason: 'INSUFFICIENT_EVIDENCE',
+      summary: 'Conflicting-bank control does not yet have contradictory evidence.',
+      explanation: 'At least two incompatible authoritative bank records are required.',
+      supporting_evidence_ids: bankCredits.map((record) => record.evidenceId),
+      contradicting_evidence_ids: [],
+      missing_evidence_types: ['bank_credit'],
+      confidence_band: 'low',
+      evidence_coverage: bankCredits.length > 0 ? 'partial' : 'insufficient',
+      recommended_plan_template_id: null,
     };
   }
 

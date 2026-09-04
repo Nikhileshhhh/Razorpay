@@ -27,6 +27,7 @@ export const EvidenceType = z.enum([
   'recipient_settlement',
   'bank_credit',
   'seller_receivable',
+  'seller_receivable_closed',
   'refund',
   'dispute',
   'recovery_action',

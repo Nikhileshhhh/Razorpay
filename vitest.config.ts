@@ -12,6 +12,7 @@ export default defineConfig({
     environment: 'node',
     include: [
       'tests/unit/**/*.test.ts',
+      'tests/unit/**/*.test.tsx',
       'tests/unit/**/*.test.mjs',
       'tests/integration/**/*.test.ts',
     ],
@@ -19,7 +20,13 @@ export default defineConfig({
     globals: false,
     setupFiles: ['tests/setup-env.ts'],
     testTimeout: 30_000,
-    hookTimeout: 60_000,
+    // The Gate B4 500-record dataset seed drives every record through the
+    // REAL acceptance/projection/control (and, for one record, full
+    // investigation/policy/action/verification) pipeline rather than
+    // hand-rolled row inserts, so a full `resetDemoDatabase()` call in a
+    // `beforeAll` genuinely takes ~2 minutes — measured, not guessed. Only
+    // the small number of B4 test files that call it pay this cost.
+    hookTimeout: 180_000,
     // Each integration file creates and drops a database on the same PostgreSQL
     // server. Vitest 3 does not apply the legacy poolOptions thread cap, so the
     // complete suite must serialize files to avoid catalog-lock starvation and

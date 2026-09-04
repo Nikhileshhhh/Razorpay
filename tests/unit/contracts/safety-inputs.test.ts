@@ -389,6 +389,7 @@ describe('policy input projection requires every §13 input', () => {
     outcome_version: 2,
     approval_status: 'REQUESTED',
     policy_bundle_version: 'moneytrace_demo_v1',
+    reconciliation_state: null,
   };
 
   it('accepts a complete projection', () => {
@@ -510,10 +511,16 @@ describe('agent claim evaluation is status-correlated', () => {
         verified_amount: { amount_minor: '1', currency: 'INR' },
       }).success,
     ).toBe(false);
-    expect(ClaimAccepted.safeParse({ claim_id: 'claim_1', status: 'PENDING' }).success).toBe(true);
-    expect(ClaimAccepted.safeParse({ claim_id: 'claim_1', status: 'VERIFIED' }).success).toBe(
-      false,
-    );
+    expect(
+      ClaimAccepted.safeParse({ claim_id: 'claim_1', status: 'PENDING', idempotent_replay: false })
+        .success,
+    ).toBe(true);
+    expect(
+      ClaimAccepted.safeParse({ claim_id: 'claim_1', status: 'VERIFIED', idempotent_replay: true })
+        .success,
+    ).toBe(true);
+    // idempotent_replay is required (a bare PENDING is no longer valid).
+    expect(ClaimAccepted.safeParse({ claim_id: 'claim_1', status: 'PENDING' }).success).toBe(false);
   });
 });
 

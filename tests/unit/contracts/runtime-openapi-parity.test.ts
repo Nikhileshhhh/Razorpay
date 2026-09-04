@@ -224,7 +224,7 @@ describe('generated OpenAPI retains authoritative structural safety', () => {
     expect(property(conflicting!, 'contradicting_evidence_ids').minItems).toBe(1);
 
     const planVariants = schemaList(generatedComponent(document, 'Plan').oneOf, 'Plan.oneOf');
-    expect(planVariants).toHaveLength(2);
+    expect(planVariants).toHaveLength(3);
     const transferPlan = planVariants.find(
       (variant) =>
         literalValue(variant, 'template_id') === 'OPEN_TRANSFER_REMEDIATION_WITH_APPROVAL',
@@ -232,12 +232,21 @@ describe('generated OpenAPI retains authoritative structural safety', () => {
     const suppressPlan = planVariants.find(
       (variant) => literalValue(variant, 'template_id') === 'SUPPRESS_DUPLICATE_RECOVERY',
     );
+    const closePlan = planVariants.find(
+      (variant) => literalValue(variant, 'template_id') === 'CLOSE_RECEIVABLE_AFTER_RECONCILIATION',
+    );
     expect(literalValue(property(transferPlan!, 'parameters'), 'tool_id')).toBe(
       'SIMULATE_TRANSFER_REMEDIATION',
     );
     expect(literalValue(property(suppressPlan!, 'parameters'), 'tool_id')).toBe(
       'SUPPRESS_SIMULATED_RECOVERY',
     );
+    expect(literalValue(property(closePlan!, 'parameters'), 'tool_id')).toBe(
+      'CLOSE_SYNTHETIC_RECEIVABLE_AFTER_RECONCILIATION',
+    );
+    expect(literalValue(closePlan!, 'authority_level')).toBe('L3');
+    expect(literalValue(property(closePlan!, 'maximum_amount_impact'), 'amount_minor')).toBe('0');
+    expect(literalValue(property(closePlan!, 'maximum_amount_impact'), 'currency')).toBe('INR');
 
     const reconciliationVariants = schemaList(
       generatedComponent(document, 'ReconciliationResult').oneOf,

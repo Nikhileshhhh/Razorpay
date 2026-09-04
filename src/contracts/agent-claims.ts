@@ -4,7 +4,7 @@ import { OpaqueId, SubjectKey, TenantId } from './common/identifiers.js';
 import { Money, SupportedCurrency } from './common/money.js';
 import { Rfc3339Utc } from './common/timestamps.js';
 import { ResourceVersion, SchemaVersion } from './common/versions.js';
-import { EvidenceReference } from './evidence.js';
+import { EvidenceReference, EvidenceType } from './evidence.js';
 
 /**
  * Agent Result Claims (PRD §8.14, handoff §7/§9.2).
@@ -48,7 +48,16 @@ export const AgentResultClaim = z
     correlation_id: OpaqueId.nullish(),
     claim_time: Rfc3339Utc,
     evidence_time: Rfc3339Utc.nullish(),
-    evidence_refs: boundedArray(EvidenceReference, LIMITS.EVIDENCE_IDS_MAX),
+    // Gate B4 remediation: an agent claim must bind to at least one
+    // validated evidence reference (backend PRD §13.3) — an empty array
+    // would let an untrusted claim assert retained value with nothing to
+    // correlate against. Each referenced id is additionally validated at
+    // acceptance time (same tenant, same subject, accepted, non-quarantined,
+    // signature-verified) in `acceptAgentClaim`.
+    evidence_refs: boundedArray(
+      EvidenceReference.extend({ evidence_type: EvidenceType }),
+      LIMITS.EVIDENCE_IDS_MAX,
+    ).min(1),
   })
   .strict();
 export type AgentResultClaim = z.infer<typeof AgentResultClaim>;

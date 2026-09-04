@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#eceef2;font-family:'IBM Plex Sans',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#1a63d8}a:hover{color:#1450b4}
+.dv-turn{padding:40px 44px 34px;border-bottom:1px solid rgba(16,24,40,.09);scroll-margin-top:16px}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}
+.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#14181f;color:#fff;border-radius:4px;text-decoration:none}
+.dv-tname{font:600 13px/1.2 'IBM Plex Sans',sans-serif;color:#14181f}
+.dv-opts{display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}
+.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(16,24,40,.09);color:#14181f;border-radius:5px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11.5px/1.3 'IBM Plex Sans',sans-serif;color:rgba(16,24,40,.58)}
+.dv-card{max-width:100%;background:#fff;border:1px solid rgba(16,24,40,.1);border-radius:10px;box-shadow:0 1px 3px rgba(16,24,40,.07);overflow:hidden}
+.dv-opt:target .dv-oid{background:#1a63d8;color:#fff}
+.dv-next{margin:24px 0 0;font:12px/1.55 'IBM Plex Sans',sans-serif;color:rgba(16,24,40,.55)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style></helmet>
+
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">MoneyTrace — shared application shell, responsive frames &amp; component specs</span></div>
+
+<div style="max-width:1180px;margin:0 0 30px;padding:22px 26px;background:#fff;border:1px solid #dfe3ea;border-radius:10px">
+<h2 style="margin:0 0 12px;font:600 15px/1.3 'IBM Plex Sans',sans-serif;color:#14181f;letter-spacing:-.01em">Assumptions &amp; design reasoning</h2>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:22px">
+<div><div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5;margin-bottom:7px">POSITION</div><p style="margin:0;font:400 12.5px/1.65 'IBM Plex Sans',sans-serif;color:#4a5464;text-wrap:pretty">Case-first control plane, not an assistant. The shell's job is to make provenance, environment and identity legible before any number is read. No chat launcher, notification centre, settings menu or real-money badge exists in this system.</p></div>
+<div><div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5;margin-bottom:7px">VISUAL LANGUAGE</div><p style="margin:0;font:400 12.5px/1.65 'IBM Plex Sans',sans-serif;color:#4a5464;text-wrap:pretty">Public enterprise-dashboard conventions only: neutral cool canvas, white surfaces, 1px restrained borders, one blue primary, semantic status pairs. Original MoneyTrace wordmark and trace motif — no third-party logo, illustration or private token value is reproduced.</p></div>
+<div><div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5;margin-bottom:7px">OPEN ASSUMPTIONS</div><p style="margin:0;font:400 12.5px/1.65 'IBM Plex Sans',sans-serif;color:#4a5464;text-wrap:pretty">(1) Header metadata order holds at ≥1360px and folds to a secondary row below it. (2) Approval badge is rendered only from a capability count. (3) Page body here is deliberately placeholder — KPIs belong to page-level specs, not the shell.</p></div>
+</div>
+</div>
+
+<div class="dv-opts">
+
+<!-- 1a DESKTOP -->
+<div class="dv-opt" id="1a">
+<div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>AppShell — Desktop 1440 × 1024 · persistent navigation, full header, degraded banner</div>
+<div class="dv-card" style="padding:22px;display:flex;gap:26px;align-items:flex-start">
+
+<div style="position:relative;width:1440px;height:1024px;background:#f6f7f9;border:1px solid #dfe3ea;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;flex:none">
+
+  <div style="height:36px;flex:none;display:flex;align-items:center;gap:12px;padding:0 20px;background:#eef3fd;border-bottom:1px solid #cfdff8">
+    <a href="#main-desktop" style="display:inline-flex;align-items:center;padding:5px 11px;background:#1a63d8;color:#fff;border-radius:5px;font:600 12px/1 'IBM Plex Sans',sans-serif;text-decoration:none;outline:2px solid #14181f;outline-offset:2px">Skip to main content</a>
+    <span style="font:400 11px/1 'IBM Plex Mono',monospace;color:#5b6472">shown in :focus state — first tab stop, visually hidden until focused</span>
+  </div>
+
+  <div style="flex:1;display:flex;min-height:0">
+
+    <nav aria-label="Primary" style="width:248px;flex:none;background:#fff;border-right:1px solid #e5e8ee;display:flex;flex-direction:column;padding:20px 12px 14px">
+      <div style="padding:0 8px 18px">
+        <div style="display:flex;align-items:center;gap:9px">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M2 14.5c3.2 0 3.6-9 6.6-9s3.4 6 5.2 6c1.3 0 1.8-1.6 1.8-3" stroke="#1a63d8" stroke-width="1.6" stroke-linecap="round"></path><circle cx="2" cy="14.5" r="1.7" fill="#14181f"></circle><circle cx="16" cy="8.5" r="1.7" fill="#1a63d8"></circle></svg>
+          <span style="font:600 16px/1 'IBM Plex Sans',sans-serif;color:#14181f;letter-spacing:-.015em">MoneyTrace</span>
+        </div>
+        <div style="margin-top:6px;font:400 11.5px/1.35 'IBM Plex Sans',sans-serif;color:#8b95a5">Revenue integrity control plane</div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <a href="#1a" style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;text-decoration:none;color:#4a5464;font:500 13.5px/1 'IBM Plex Sans',sans-serif" style-hover="background:#f2f4f8;color:#14181f">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"></rect><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"></rect><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"></rect><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"></rect></svg>
+          <span>Overview</span>
+        </a>
+        <a href="#1a" aria-current="page" style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;text-decoration:none;color:#1450b4;font:600 13.5px/1 'IBM Plex Sans',sans-serif;background:#eef3fd;box-shadow:inset 3px 0 0 #1a63d8">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="4.5" width="12" height="9" rx="1.5" stroke="currentColor" stroke-width="1.4"></rect><path d="M2.4 5 6 2.5h3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg>
+          <span>Cases</span>
+        </a>
+        <a href="#1a" style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;text-decoration:none;color:#4a5464;font:500 13.5px/1 'IBM Plex Sans',sans-serif" style-hover="background:#f2f4f8;color:#14181f">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.4"></circle><path d="M5.4 8.2 7.2 10l3.4-3.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span style="flex:1">Approvals</span>
+          <sc-if value="{{ hasApprovals }}" hint-placeholder-val="{{ true }}"><span aria-label="7 approvals awaiting decision" style="min-width:20px;padding:2px 6px;border-radius:10px;background:#1a63d8;color:#fff;font:600 11px/1.4 'IBM Plex Mono',monospace;text-align:center">{{ approvalCount }}</span></sc-if>
+        </a>
+        <a href="#1a" style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;text-decoration:none;color:#4a5464;font:500 13.5px/1 'IBM Plex Sans',sans-serif" style-hover="background:#f2f4f8;color:#14181f">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 3.5h10M3 8h10M3 12.5h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg>
+          <span>Audit</span>
+        </a>
+        <a href="#1a" style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;text-decoration:none;color:#4a5464;font:500 13.5px/1 'IBM Plex Sans',sans-serif;outline:2px solid #1a63d8;outline-offset:2px">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 8.5h3L6 5l2.4 6L10 8h4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span style="flex:1">Data Health</span>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-label="Degraded" role="img"><path d="M8 2.6 14.5 13.4H1.5L8 2.6Z" stroke="#b06f0d" stroke-width="1.4" stroke-linejoin="round"></path><path d="M8 6.4v3.1" stroke="#b06f0d" stroke-width="1.4" stroke-linecap="round"></path><circle cx="8" cy="11.3" r=".85" fill="#b06f0d"></circle></svg>
+        </a>
+      </div>
+
+      <div style="margin-top:auto;padding:12px 10px 0;border-top:1px solid #eceef2;display:flex;flex-direction:column;gap:4px">
+        <span style="font:400 10.5px/1.4 'IBM Plex Mono',monospace;color:#8b95a5">dataset synthetic-2026-08</span>
+        <span style="font:400 10.5px/1.4 'IBM Plex Mono',monospace;color:#8b95a5">no live connection</span>
+      </div>
+    </nav>
+
+    <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+
+      <header style="height:64px;flex:none;background:#fff;border-bottom:1px solid #e5e8ee;display:flex;align-items:center;gap:12px;padding:0 24px">
+        <nav aria-label="Breadcrumb" style="display:flex;align-items:center;gap:7px;flex:1;min-width:0">
+          <a href="#1a" style="font:400 12.5px/1 'IBM Plex Sans',sans-serif;color:#5b6472;text-decoration:none" style-hover="color:#1a63d8;text-decoration:underline">Overview</a>
+          <span aria-hidden="true" style="color:#c3cad5;font-size:11px">/</span>
+          <span aria-current="page" style="font:600 12.5px/1 'IBM Plex Sans',sans-serif;color:#14181f">Cases</span>
+        </nav>
+
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 10px;background:#f6f7f9;border:1px solid #e5e8ee;border-radius:6px">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="#5b6472" stroke-width="1.4"></circle><path d="M8 5v3.2l2.2 1.3" stroke="#5b6472" stroke-width="1.4" stroke-linecap="round"></path></svg>
+          <span style="font:400 11.5px/1 'IBM Plex Sans',sans-serif;color:#4a5464">Evaluated</span>
+          <abbr title="25 August 2026, 05:20 UTC — dataset evaluation timestamp, not current time" style="font:500 11.5px/1 'IBM Plex Mono',monospace;color:#14181f;text-decoration:none;border-bottom:1px dotted #8b95a5;cursor:help">25 Aug 2026, 10:50 IST</abbr>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:6px;padding:5px 8px 5px 10px;background:#fff;border:1px solid #e5e8ee;border-radius:6px">
+          <span style="font:400 11.5px/1 'IBM Plex Sans',sans-serif;color:#8b95a5">Manifest</span>
+          <span style="font:500 11.5px/1 'IBM Plex Mono',monospace;color:#14181f;letter-spacing:.01em">7b42…91ef</span>
+          <button type="button" aria-label="Copy full manifest hash" title="Copy full manifest hash" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border:0;border-radius:4px;background:transparent;cursor:pointer" style-hover="background:#f2f4f8">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="#5b6472" stroke-width="1.4"></rect><path d="M10.5 3.5H4A1.5 1.5 0 0 0 2.5 5v6.5" stroke="#5b6472" stroke-width="1.4" stroke-linecap="round"></path></svg>
+          </button>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:6px;padding:5px 10px;background:#f5f2fb;border:1px solid #d3c8ea;border-radius:6px">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6.2 2h3.6M6.9 2v3.6L4.1 11.6A1.6 1.6 0 0 0 5.5 14h5a1.6 1.6 0 0 0 1.4-2.4L9.1 5.6V2" stroke="#55408f" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span style="font:600 11.5px/1 'IBM Plex Sans',sans-serif;color:#55408f;letter-spacing:.01em">Synthetic Demo</span>
+        </div>
+
+        <button type="button" aria-label="Refresh current page" title="Refresh current page" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #e5e8ee;border-radius:6px;background:#fff;cursor:pointer" style-hover="background:#f2f4f8;border-color:#d7dce4" style-focus="outline:2px solid #1a63d8;outline-offset:2px">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13.2 8a5.2 5.2 0 1 1-1.7-3.85" stroke="#4a5464" stroke-width="1.5" stroke-linecap="round"></path><path d="M13.4 1.9v2.9h-2.9" stroke="#4a5464" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        </button>
+
+        <div style="display:flex;align-items:center;gap:9px;padding:4px 9px 4px 6px;background:#fff;border:1px solid #d7dce4;border-radius:6px;cursor:pointer" style-hover="border-color:#b8c2d0;background:#fafbfc">
+          <span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:5px;background:#eef3fd;color:#1450b4;font:600 10.5px/1 'IBM Plex Mono',monospace">DO</span>
+          <span style="display:flex;flex-direction:column;gap:2px;text-align:left">
+            <span style="font:400 9.5px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;color:#8b95a5">DEMO ROLE</span>
+            <span style="font:600 12px/1 'IBM Plex Sans',sans-serif;color:#14181f">Demo Operator / Auditor</span>
+          </span>
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.5 8 10.5l4-4" stroke="#8b95a5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        </div>
+
+        <button type="button" style="display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 12px;border:1px solid #d7dce4;border-radius:6px;background:#fff;cursor:pointer;font:500 12.5px/1 'IBM Plex Sans',sans-serif;color:#14181f" style-hover="background:#f2f4f8" style-focus="outline:2px solid #1a63d8;outline-offset:2px">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="#4a5464" stroke-width="1.4"></rect><path d="M6.2 8h3.6M8 6.2v3.6" stroke="#4a5464" stroke-width="1.4" stroke-linecap="round"></path></svg>
+          Demo scenarios
+        </button>
+      </header>
+
+      <sc-if value="{{ showDegraded }}" hint-placeholder-val="{{ true }}">
+      <div role="status" style="flex:none;display:flex;align-items:flex-start;gap:11px;padding:12px 24px;background:#fff8ea;border-bottom:1px solid #f0dbb0">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="margin-top:1px;flex:none"><path d="M8 2.6 14.5 13.4H1.5L8 2.6Z" stroke="#b06f0d" stroke-width="1.4" stroke-linejoin="round"></path><path d="M8 6.4v3.1" stroke="#b06f0d" stroke-width="1.4" stroke-linecap="round"></path><circle cx="8" cy="11.3" r=".85" fill="#b06f0d"></circle></svg>
+        <div style="flex:1">
+          <span style="font:600 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#7a4d06">Optional Razorpay Test source unavailable.</span>
+          <span style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#7a4d06"> Synthetic bank and Route evidence remain available; deterministic demo conclusions are safe.</span>
+        </div>
+        <a href="#1a" style="flex:none;font:600 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#7a4d06;text-decoration:underline;text-underline-offset:2px">View Data Health</a>
+        <button type="button" aria-label="Dismiss degraded-source notice" title="Dismiss" style="flex:none;width:22px;height:22px;border:0;border-radius:4px;background:transparent;cursor:pointer;color:#7a4d06;font:400 14px/1 'IBM Plex Sans',sans-serif">×</button>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ showReset }}" hint-placeholder-val="{{ false }}">
+      <div role="alert" style="flex:none;display:flex;align-items:center;gap:11px;padding:13px 24px;background:#8a5a08;border-bottom:1px solid #6d4706">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex:none"><path d="M13.2 8a5.2 5.2 0 1 1-1.7-3.85" stroke="#fff" stroke-width="1.6" stroke-linecap="round"></path><path d="M13.4 1.9v2.9h-2.9" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <span style="font:600 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#fff">Demo reset in progress. Financial mutations are temporarily unavailable.</span>
+        <span style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:rgba(255,255,255,.82)">Read, audit and export remain available. Approve, simulate and reconcile actions are disabled until reset completes.</span>
+      </div>
+      </sc-if>
+
+      <main id="main-desktop" style="flex:1;overflow:hidden;padding:36px 40px 0;background:#f6f7f9">
+        <div style="max-width:1112px">
+          <h1 style="margin:0;font:600 26px/1.2 'IBM Plex Sans',sans-serif;color:#14181f;letter-spacing:-.02em">Cases</h1>
+          <p style="margin:9px 0 0;max-width:66ch;font:400 13.5px/1.65 'IBM Plex Sans',sans-serif;color:#5b6472;text-wrap:pretty">Every conclusion on this page is derived from the evaluated dataset above. Page-level content is specified separately — this frame documents the shell only.</p>
+
+          <div style="display:flex;align-items:center;gap:10px;margin:24px 0 16px">
+            <div style="flex:1;max-width:320px;display:flex;align-items:center;gap:8px;height:34px;padding:0 11px;background:#fff;border:1px solid #d7dce4;border-radius:6px">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="#8b95a5" stroke-width="1.4"></circle><path d="M10.4 10.4 14 14" stroke="#8b95a5" stroke-width="1.4" stroke-linecap="round"></path></svg>
+              <span style="font:400 12.5px/1 'IBM Plex Sans',sans-serif;color:#8b95a5">Search cases</span>
+            </div>
+            <span style="display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 11px;background:#fff;border:1px solid #d7dce4;border-radius:6px;font:500 12.5px/1 'IBM Plex Sans',sans-serif;color:#4a5464">Status<svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.5 8 10.5l4-4" stroke="#8b95a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+            <span style="display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 11px;background:#fff;border:1px solid #d7dce4;border-radius:6px;font:500 12.5px/1 'IBM Plex Sans',sans-serif;color:#4a5464">Artifact class<svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.5 8 10.5l4-4" stroke="#8b95a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+            <span style="margin-left:auto;font:400 11.5px/1 'IBM Plex Mono',monospace;color:#8b95a5">12 cases · 0 live</span>
+          </div>
+
+          <div style="height:352px;border:1px dashed #c3cad5;border-radius:8px;background:repeating-linear-gradient(135deg,#fff 0 9px,#f2f4f8 9px 18px);display:flex;align-items:center;justify-content:center">
+            <span style="padding:7px 12px;background:#fff;border:1px solid #d7dce4;border-radius:5px;font:500 11.5px/1 'IBM Plex Mono',monospace;color:#5b6472">page content region — dense case table, 1112px content max-width</span>
+          </div>
+
+          <p style="margin:20px 0 0;max-width:72ch;font:400 12.5px/1.7 'IBM Plex Sans',sans-serif;color:#8b95a5;text-wrap:pretty">Prose inside the shell is capped at 72ch so explanatory text stays readable while tables use the full 1112px measure. Landmarks are stable across every page: one <span style="font-family:'IBM Plex Mono',monospace;color:#5b6472">header</span>, one <span style="font-family:'IBM Plex Mono',monospace;color:#5b6472">nav</span>, one <span style="font-family:'IBM Plex Mono',monospace;color:#5b6472">main</span> with a single h1, plus an optional status region.</p>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <sc-if value="{{ showPins }}" hint-placeholder-val="{{ true }}">
+  <div aria-hidden="true" style="position:absolute;inset:0;pointer-events:none">
+    <span style="position:absolute;left:196px;top:9px;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">1</span>
+    <span style="position:absolute;left:206px;top:52px;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">2</span>
+    <span style="position:absolute;left:222px;top:178px;width:18px;height:18px;border-radius:9px;background:#1a63d8;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">3</span>
+    <span style="position:absolute;left:222px;top:224px;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">4</span>
+    <span style="position:absolute;left:602px;top:39px;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">5</span>
+    <span style="position:absolute;left:800px;top:39px;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">6</span>
+    <span style="position:absolute;left:946px;top:39px;width:18px;height:18px;border-radius:9px;background:#55408f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">7</span>
+    <span style="position:absolute;left:1028px;top:39px;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">8</span>
+    <span style="position:absolute;left:1160px;top:39px;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">9</span>
+    <span style="position:absolute;left:1350px;top:39px;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">10</span>
+    <span style="position:absolute;left:1290px;top:106px;width:18px;height:18px;border-radius:9px;background:#b06f0d;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">11</span>
+    <span style="position:absolute;left:326px;top:180px;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">12</span>
+    <span style="position:absolute;left:1080px;top:900px;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">13</span>
+  </div>
+  </sc-if>
+</div>
+
+<div style="width:352px;flex:none;display:flex;flex-direction:column;gap:12px">
+  <div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5">SHELL ANNOTATIONS</div>
+  <ol style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:11px">
+    <li style="display:flex;gap:9px"><span style="flex:none;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">1</span><span style="font:400 12px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464"><b style="color:#14181f;font-weight:600">Skip to main content</b> — first tab stop in the DOM, off-screen until focused, then rendered as a blue chip with a 2px dark focus ring. Target is <span style="font-family:'IBM Plex Mono',monospace">#main</span>.</span></li>
+    <li style="display:flex;gap:9px"><span style="flex:none;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">2</span><span style="font:400 12px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464"><b style="color:#14181f;font-weight:600">Wordmark + descriptor</b> — 248px nav (spec range 232–256). Text wordmark plus a single restrained trace path; "Revenue integrity control plane" is a static descriptor, never a tagline slot.</span></li>
+    <li style="display:flex;gap:9px"><span style="flex:none;width:18px;height:18px;border-radius:9px;background:#1a63d8;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">3</span><span style="font:400 12px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464"><b style="color:#14181f;font-weight:600">Active item</b> — 3px inset blue rule + 4% blue tint + 600 weight + <span style="font-family:'IBM Plex Mono',monospace">aria-current="page"</span>. Order is fixed: Overview, Cases, Approvals, Audit, Data Health. Nothing else is ever added.</span></li>
+    <li style="display:flex;gap:9px"><span style="flex:none;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">4</span><span style="font:400 12px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464"><b style="color:#14181f;font-weight:600">Approval badge</b> — rendered only when the capability response returns a pending count; absent (not "0") when the field is missing or zero. Accessible name spells out "7 approvals awaiting decision".</span></li>
+    <li style="display:flex;gap:9px"><span style="flex:none;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">5</span><span style="font:400 12px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464"><b style="color:#14181f;font-weight:600">DatasetContext</b> — "Evaluated 25 Aug 2026, 10:50 IST"; the UTC equivalent and the clarification that this is an evaluation timestamp live in the accessible title, exposed on hover and focus.</span></li>
+    <li style="display:flex;gap:9px"><span style="flex:none;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">6</span><span style="font:400 12px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464"><b style="color:#14181f;font-weight:600">Manifest hash</b> — read-only forensic metadata, monospace short form, never truncated with an ellipsis mid-glyph. Copy button copies the full hash and announces "Manifest hash copied".</span></li>
+    <li style="display:flex;gap:9px"><span style="flex:none;width:18px;height:18px;border-radius:9px;background:#55408f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">7</span><span style="font:400 12px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464"><b style="color:#14181f;font-weight:600">EnvironmentBadge</b> — always present, never dismissible, never "Live". Flask icon + text; violet tint keeps it distinct from blue actions and from status colours.</span></li>
+    <li style="display:flex;gap:9px"><span style="flex:none;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">8</span><span style="font:400 12px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464"><b style="color:#14181f;font-weight:600">Refresh</b> — icon-only with accessible name "Refresh current page" and matching tooltip; refetches the current page's queries only, never the whole app.</span></li>
+    <li style="display:flex;gap:9px"><span style="flex:none;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">9</span><span style="font:400 12px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464"><b style="color:#14181f;font-weight:600">DemoRoleSwitcher</b> — label "DEMO ROLE" above the human-readable identity; seeded id appears in the menu. Four states in <a class="dv-oid" href="#1c">1c</a>.</span></li>
+    <li style="display:flex;gap:9px"><span style="flex:none;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">10</span><span style="font:400 12px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464"><b style="color:#14181f;font-weight:600">Demo scenarios</b> — mounted only for the Demo Operator / Auditor identity. For the other three roles the button is not rendered at all, and the server rejects the endpoint regardless.</span></li>
+    <li style="display:flex;gap:9px"><span style="flex:none;width:18px;height:18px;border-radius:9px;background:#b06f0d;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">11</span><span style="font:400 12px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464"><b style="color:#14181f;font-weight:600">GlobalStatusBanner</b> — sits below the header, above main, and is non-blocking. Safe-warning amber, not destructive red. Data Health nav item mirrors the same degraded glyph. Variants in <a class="dv-oid" href="#1b">1b</a>.</span></li>
+    <li style="display:flex;gap:9px"><span style="flex:none;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">12</span><span style="font:400 12px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464"><b style="color:#14181f;font-weight:600">Breadcrumbs / back context</b> — page-specific; a case detail page swaps this for "← Cases · CASE-2043". Only the trailing item is 600 weight and carries <span style="font-family:'IBM Plex Mono',monospace">aria-current</span>.</span></li>
+    <li style="display:flex;gap:9px"><span style="flex:none;width:18px;height:18px;border-radius:9px;background:#14181f;color:#fff;font:600 10.5px/18px 'IBM Plex Mono',monospace;text-align:center">13</span><span style="font:400 12px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464"><b style="color:#14181f;font-weight:600">Main region</b> — 36px top spacing, 40px gutters, one h1, content capped at 1112px for dense tables and 72ch for prose.</span></li>
+  </ol>
+  <div style="margin-top:4px;padding:12px 13px;background:#f6f7f9;border:1px solid #e5e8ee;border-left:3px solid #14181f;border-radius:6px">
+    <div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#14181f;margin-bottom:6px">SOURCE-DEPENDENT LABEL</div>
+    <p style="margin:0;font:400 12px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464">"Razorpay Test connected" may render in this header <b style="font-weight:600;color:#14181f">only</b> when the Data Health capability response explicitly reports that state. It is never inferred from environment branding, base URL, or the presence of keys. When the capability is absent the header shows nothing and the degraded banner explains why.</p>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- 1b BANNERS -->
+<div class="dv-opt" id="1b">
+<div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>GlobalStatusBanner — three states, header crop at 1440px</div>
+<div class="dv-card" style="padding:22px;display:flex;flex-direction:column;gap:22px">
+
+<div style="display:flex;gap:22px;align-items:flex-start">
+  <div style="width:1000px;flex:none;border:1px solid #dfe3ea;border-radius:8px;overflow:hidden">
+    <div style="height:52px;display:flex;align-items:center;gap:12px;padding:0 20px;background:#fff;border-bottom:1px solid #e5e8ee">
+      <span style="font:600 12.5px/1 'IBM Plex Sans',sans-serif;color:#14181f">Data Health</span>
+      <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:4px 9px;background:#edf6ef;border:1px solid #c3e2c9;border-radius:5px;font:500 11.5px/1 'IBM Plex Sans',sans-serif;color:#1c6b32"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="#1c6b32" stroke-width="1.4"></circle><path d="M5.4 8.2 7.2 10l3.4-3.6" stroke="#1c6b32" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>Razorpay Test connected</span>
+      <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 9px;background:#f5f2fb;border:1px solid #d3c8ea;border-radius:5px;font:600 11.5px/1 'IBM Plex Sans',sans-serif;color:#55408f">Synthetic Demo</span>
+    </div>
+    <div style="padding:16px 20px;background:#f6f7f9;font:400 12px/1.6 'IBM Plex Sans',sans-serif;color:#8b95a5">No banner. All optional sources reported available by the capability response.</div>
+  </div>
+  <div style="width:352px;flex:none;font:400 12px/1.6 'IBM Plex Sans',sans-serif;color:#4a5464"><b style="font-weight:600;color:#14181f">Nominal.</b> The green "Razorpay Test connected" chip is the only place that string appears, and only when <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px">capabilities.razorpay_test = "connected"</span>. Status is carried by icon + text, not colour alone. Environment badge stays visible in every state.</div>
+</div>
+
+<div style="display:flex;gap:22px;align-items:flex-start">
+  <div style="width:1000px;flex:none;border:1px solid #dfe3ea;border-radius:8px;overflow:hidden">
+    <div style="height:52px;display:flex;align-items:center;gap:12px;padding:0 20px;background:#fff;border-bottom:1px solid #e5e8ee">
+      <span style="font:600 12.5px/1 'IBM Plex Sans',sans-serif;color:#14181f">Cases</span>
+      <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:4px 9px;background:#f6f7f9;border:1px dashed #c3cad5;border-radius:5px;font:500 11.5px/1 'IBM Plex Sans',sans-serif;color:#5b6472"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="#5b6472" stroke-width="1.4"></circle><path d="M8 5v3.4M8 10.8v.2" stroke="#5b6472" stroke-width="1.4" stroke-linecap="round"></path></svg>Source unavailable</span>
+      <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 9px;background:#f5f2fb;border:1px solid #d3c8ea;border-radius:5px;font:600 11.5px/1 'IBM Plex Sans',sans-serif;color:#55408f">Synthetic Demo</span>
+    </div>
+    <div role="status" style="display:flex;align-items:flex-start;gap:11px;padding:12px 20px;background:#fff8ea;border-bottom:1px solid #f0dbb0">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="margin-top:1px;flex:none"><path d="M8 2.6 14.5 13.4H1.5L8 2.6Z" stroke="#b06f0d" stroke-width="1.4" stroke-linejoin="round"></path><path d="M8 6.4v3.1" stroke="#b06f0d" stroke-width="1.4" stroke-linecap="round"></path><circle cx="8" cy="11.3" r=".85" fill="#b06f0d"></circle></svg>
+      <div style="flex:1"><span style="font:600 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#7a4d06">Optional Razorpay Test source unavailable.</span><span style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#7a4d06"> Synthetic bank and Route evidence remain available; deterministic demo conclusions are safe.</span></div>
+      <a href="#1b" style="flex:none;font:600 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#7a4d06;text-decoration:underline;text-underline-offset:2px">View Data Health</a>
+      <button type="button" aria-label="Dismiss degraded-source notice" style="flex:none;width:22px;height:22px;border:0;border-radius:4px;background:transparent;cursor:pointer;color:#7a4d06;font:400 14px/1 'IBM Plex Sans',sans-serif">×</button>
+    </div>
+    <div style="padding:16px 20px;background:#f6f7f9;font:400 12px/1.6 'IBM Plex Sans',sans-serif;color:#8b95a5">Page remains fully interactive. Nothing is disabled.</div>
+  </div>
+  <div style="width:352px;flex:none;font:400 12px/1.6 'IBM Plex Sans',sans-serif;color:#4a5464"><b style="font-weight:600;color:#14181f">Degraded — non-blocking.</b> Safe-warning amber, triangle glyph, dismissible per session but re-raised on refetch while the source stays down. The header chip degrades to a dashed "Source unavailable", never to a red failure. Copy states the consequence ("conclusions are safe") so reviewers don't over-read the warning.</div>
+</div>
+
+<div style="display:flex;gap:22px;align-items:flex-start">
+  <div style="width:1000px;flex:none;border:1px solid #dfe3ea;border-radius:8px;overflow:hidden">
+    <div style="height:52px;display:flex;align-items:center;gap:12px;padding:0 20px;background:#fff;border-bottom:1px solid #e5e8ee">
+      <span style="font:600 12.5px/1 'IBM Plex Sans',sans-serif;color:#14181f">Approvals</span>
+      <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:4px 9px;background:#f5f2fb;border:1px solid #d3c8ea;border-radius:5px;font:600 11.5px/1 'IBM Plex Sans',sans-serif;color:#55408f">Synthetic Demo</span>
+    </div>
+    <div role="alert" aria-live="assertive" style="display:flex;align-items:center;gap:11px;padding:13px 20px;background:#8a5a08">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex:none"><path d="M13.2 8a5.2 5.2 0 1 1-1.7-3.85" stroke="#fff" stroke-width="1.6" stroke-linecap="round"></path><path d="M13.4 1.9v2.9h-2.9" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      <span style="font:600 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#fff">Demo reset in progress. Financial mutations are temporarily unavailable.</span>
+      <span style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:rgba(255,255,255,.82)">Approve, simulate and reconcile are disabled. Read, audit and export continue.</span>
+    </div>
+    <div style="padding:16px 20px;background:#f6f7f9;display:flex;align-items:center;gap:10px">
+      <span aria-disabled="true" style="display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 13px;border-radius:6px;background:#c3cad5;color:#fff;font:600 12.5px/1 'IBM Plex Sans',sans-serif;cursor:not-allowed">Approve</span>
+      <span aria-disabled="true" style="display:inline-flex;align-items:center;height:32px;padding:0 13px;border:1px solid #e5e8ee;border-radius:6px;background:#fff;color:#b0b8c4;font:500 12.5px/1 'IBM Plex Sans',sans-serif;cursor:not-allowed">Simulate action</span>
+      <span style="display:inline-flex;align-items:center;height:32px;padding:0 13px;border:1px solid #d7dce4;border-radius:6px;background:#fff;color:#14181f;font:500 12.5px/1 'IBM Plex Sans',sans-serif">Export audit trail</span>
+      <span style="font:400 11.5px/1 'IBM Plex Mono',monospace;color:#8b95a5">disabled commands keep tooltips: "Unavailable during demo reset"</span>
+    </div>
+  </div>
+  <div style="width:352px;flex:none;font:400 12px/1.6 'IBM Plex Sans',sans-serif;color:#4a5464"><b style="font-weight:600;color:#14181f">Reset in progress — high visibility, still safe.</b> Solid deep-amber band (6.4:1 on white text) rather than destructive red: nothing has failed. Only conflicting commands are disabled — the rest of the page stays present and readable, with disabled controls keeping accessible names and a reason tooltip. Announced once via <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px">role="alert"</span>; no spinner animation is required to convey it.</div>
+</div>
+</div>
+</div>
+
+<!-- 1c ROLE SWITCHER -->
+<div class="dv-opt" id="1c">
+<div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>DemoRoleSwitcher — closed, open, refetching, server-denied</div>
+<div class="dv-card" style="padding:22px;display:flex;gap:20px;align-items:flex-start">
+
+<div style="width:300px;flex:none;display:flex;flex-direction:column;gap:10px">
+  <div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5">1 · CLOSED</div>
+  <div style="height:250px;padding:18px;background:#f6f7f9;border:1px solid #e5e8ee;border-radius:8px">
+    <div style="display:flex;align-items:center;gap:9px;padding:4px 9px 4px 6px;background:#fff;border:1px solid #d7dce4;border-radius:6px;width:max-content">
+      <span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:5px;background:#eef3fd;color:#1450b4;font:600 10.5px/1 'IBM Plex Mono',monospace">IN</span>
+      <span style="display:flex;flex-direction:column;gap:2px"><span style="font:400 9.5px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;color:#8b95a5">DEMO ROLE</span><span style="font:600 12px/1 'IBM Plex Sans',sans-serif;color:#14181f">Investigator / Case Manager</span></span>
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.5 8 10.5l4-4" stroke="#8b95a5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </div>
+    <div style="margin-top:14px;font:400 11.5px/1.6 'IBM Plex Sans',sans-serif;color:#5b6472">Human-readable role first; seeded id <span style="font-family:'IBM Plex Mono',monospace">user_investigator</span> is shown in the menu and in the mobile sheet. Trigger is a <span style="font-family:'IBM Plex Mono',monospace">button</span> with <span style="font-family:'IBM Plex Mono',monospace">aria-haspopup="menu"</span>.</div>
+  </div>
+</div>
+
+<div style="width:300px;flex:none;display:flex;flex-direction:column;gap:10px">
+  <div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5">2 · OPEN MENU</div>
+  <div style="height:250px;padding:18px;background:#f6f7f9;border:1px solid #e5e8ee;border-radius:8px;position:relative">
+    <div style="display:flex;align-items:center;gap:9px;padding:4px 9px 4px 6px;background:#fff;border:1px solid #1a63d8;border-radius:6px;width:max-content;outline:2px solid #1a63d8;outline-offset:2px">
+      <span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:5px;background:#eef3fd;color:#1450b4;font:600 10.5px/1 'IBM Plex Mono',monospace">IN</span>
+      <span style="display:flex;flex-direction:column;gap:2px"><span style="font:400 9.5px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;color:#8b95a5">DEMO ROLE</span><span style="font:600 12px/1 'IBM Plex Sans',sans-serif;color:#14181f">Investigator / Case Manager</span></span>
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="transform:rotate(180deg)"><path d="M4 6.5 8 10.5l4-4" stroke="#1a63d8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </div>
+    <div role="menu" aria-label="Demo role" style="position:absolute;left:18px;top:66px;width:264px;background:#fff;border:1px solid #d7dce4;border-radius:8px;box-shadow:0 8px 24px rgba(16,24,40,.14);padding:6px;z-index:2">
+      <div style="padding:7px 9px 8px;font:400 9.5px/1.3 'IBM Plex Mono',monospace;letter-spacing:.07em;color:#8b95a5;border-bottom:1px solid #eceef2">SEEDED DEMO IDENTITIES · NOT AUTHENTICATION</div>
+      <div role="menuitemradio" aria-checked="false" style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:5px" style-hover="background:#f2f4f8"><span style="width:14px;text-align:center;color:#c3cad5">·</span><span style="display:flex;flex-direction:column"><span style="font:500 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f">Viewer</span><span style="font:400 10.5px/1.3 'IBM Plex Mono',monospace;color:#8b95a5">user_viewer</span></span></div>
+      <div role="menuitemradio" aria-checked="true" style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:5px;background:#eef3fd"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.4 8.4 6.4 11.4l6.2-6.6" stroke="#1450b4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="display:flex;flex-direction:column"><span style="font:600 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#1450b4">Investigator / Case Manager</span><span style="font:400 10.5px/1.3 'IBM Plex Mono',monospace;color:#5b6472">user_investigator</span></span></div>
+      <div role="menuitemradio" aria-checked="false" style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:5px" style-hover="background:#f2f4f8"><span style="width:14px;text-align:center;color:#c3cad5">·</span><span style="display:flex;flex-direction:column"><span style="font:500 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f">Finance Approver</span><span style="font:400 10.5px/1.3 'IBM Plex Mono',monospace;color:#8b95a5">user_approver</span></span></div>
+      <div role="menuitemradio" aria-checked="false" style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:5px;outline:2px solid #1a63d8;outline-offset:-1px" style-hover="background:#f2f4f8"><span style="width:14px;text-align:center;color:#c3cad5">·</span><span style="display:flex;flex-direction:column"><span style="font:500 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f">Demo Operator / Auditor</span><span style="font:400 10.5px/1.3 'IBM Plex Mono',monospace;color:#8b95a5">user_operator</span></span></div>
+    </div>
+  </div>
+</div>
+
+<div style="width:300px;flex:none;display:flex;flex-direction:column;gap:10px">
+  <div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5">3 · CHANGING / REFETCHING</div>
+  <div style="height:250px;padding:18px;background:#f6f7f9;border:1px solid #e5e8ee;border-radius:8px">
+    <div aria-busy="true" style="display:flex;align-items:center;gap:9px;padding:4px 9px 4px 6px;background:#fafbfc;border:1px solid #d7dce4;border-radius:6px;width:max-content;opacity:.75">
+      <span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:5px;background:#f2f4f8;color:#8b95a5;font:600 10.5px/1 'IBM Plex Mono',monospace">FA</span>
+      <span style="display:flex;flex-direction:column;gap:2px"><span style="font:400 9.5px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;color:#8b95a5">DEMO ROLE</span><span style="font:600 12px/1 'IBM Plex Sans',sans-serif;color:#5b6472">Switching to Finance Approver…</span></span>
+    </div>
+    <div style="margin-top:12px;display:flex;flex-direction:column;gap:7px">
+      <div style="height:9px;border-radius:3px;background:#e5e8ee;width:88%"></div>
+      <div style="height:9px;border-radius:3px;background:#e5e8ee;width:64%"></div>
+      <div style="height:9px;border-radius:3px;background:#eceef2;width:76%"></div>
+    </div>
+    <div role="status" aria-live="polite" style="margin-top:14px;padding:8px 10px;background:#fff;border:1px dashed #c3cad5;border-radius:6px;font:400 11px/1.5 'IBM Plex Mono',monospace;color:#4a5464">announces: "Demo role changed to Finance Approver"</div>
+    <div style="margin-top:9px;font:400 11.5px/1.6 'IBM Plex Sans',sans-serif;color:#5b6472">Role-sensitive state is cleared, the current page refetches, skeletons replace stale rows. Static skeletons only — no shimmer under reduced motion.</div>
+  </div>
+</div>
+
+<div style="width:300px;flex:none;display:flex;flex-direction:column;gap:10px">
+  <div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5">4 · SERVER-DENIED ACTION</div>
+  <div style="height:250px;padding:18px;background:#f6f7f9;border:1px solid #e5e8ee;border-radius:8px">
+    <div style="display:flex;align-items:center;gap:9px;padding:4px 9px 4px 6px;background:#fff;border:1px solid #d7dce4;border-radius:6px;width:max-content">
+      <span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:5px;background:#f1f4f8;color:#2c3e55;font:600 10.5px/1 'IBM Plex Mono',monospace">VW</span>
+      <span style="display:flex;flex-direction:column;gap:2px"><span style="font:400 9.5px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;color:#8b95a5">DEMO ROLE</span><span style="font:600 12px/1 'IBM Plex Sans',sans-serif;color:#14181f">Viewer</span></span>
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.5 8 10.5l4-4" stroke="#8b95a5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </div>
+    <div role="alert" style="margin-top:12px;padding:11px 12px;background:#fdf2f0;border:1px solid #e9c2bb;border-left:3px solid #b42318;border-radius:6px">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="#b42318" stroke-width="1.4"></circle><path d="M8 5v3.3" stroke="#b42318" stroke-width="1.5" stroke-linecap="round"></path><circle cx="8" cy="10.8" r=".85" fill="#b42318"></circle></svg><span style="font:600 12px/1 'IBM Plex Sans',sans-serif;color:#8f1d12">Action refused by server</span></div>
+      <p style="margin:0;font:400 11.5px/1.55 'IBM Plex Sans',sans-serif;color:#7a2019">This demo role cannot approve. Client controls were hidden, but authorization is enforced server-side; the request was rejected. <span style="font-family:'IBM Plex Mono',monospace;font-size:11px">403 role_not_permitted</span></p>
+    </div>
+    <div style="margin-top:10px;font:400 11.5px/1.6 'IBM Plex Sans',sans-serif;color:#5b6472">Shown when a hidden or disabled control is reached anyway (deep link, replay, stale tab). No state changes; the attempt is written to Audit.</div>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- 1d TABLET -->
+<div class="dv-opt" id="1d">
+<div class="dv-olabel"><a class="dv-oid" href="#1d">1d</a>Tablet 1024 × 1366 — icon rail with tooltips, controlled drawer, compact metadata row</div>
+<div class="dv-card" style="padding:22px;display:flex;gap:24px;align-items:flex-start">
+
+<div style="width:1024px;height:1366px;flex:none;background:#f6f7f9;border:1px solid #dfe3ea;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;position:relative">
+  <div style="height:32px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;background:#eef3fd;border-bottom:1px solid #cfdff8">
+    <a href="#1d" style="display:inline-flex;padding:4px 10px;background:#1a63d8;color:#fff;border-radius:5px;font:600 11.5px/1 'IBM Plex Sans',sans-serif;text-decoration:none;outline:2px solid #14181f;outline-offset:2px">Skip to main content</a>
+  </div>
+  <div style="flex:1;display:flex;min-height:0">
+    <nav aria-label="Primary" style="width:72px;flex:none;background:#fff;border-right:1px solid #e5e8ee;display:flex;flex-direction:column;align-items:center;padding:14px 0 12px;gap:6px">
+      <button type="button" aria-label="Expand navigation" aria-expanded="false" title="Expand navigation" style="width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #e5e8ee;border-radius:7px;background:#fff;cursor:pointer;margin-bottom:8px">
+        <svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h11" stroke="#4a5464" stroke-width="1.5" stroke-linecap="round"></path></svg>
+      </button>
+      <span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;background:#eef3fd;margin-bottom:6px"><svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M2 14.5c3.2 0 3.6-9 6.6-9s3.4 6 5.2 6c1.3 0 1.8-1.6 1.8-3" stroke="#1a63d8" stroke-width="1.7" stroke-linecap="round"></path><circle cx="16" cy="8.5" r="1.7" fill="#1a63d8"></circle></svg></span>
+      <a href="#1d" aria-label="Overview" title="Overview" style="width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border-radius:7px;color:#4a5464" style-hover="background:#f2f4f8"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"></rect><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"></rect><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"></rect><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"></rect></svg></a>
+      <a href="#1d" aria-label="Cases" aria-current="page" title="Cases" style="width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border-radius:7px;color:#1450b4;background:#eef3fd;box-shadow:inset 3px 0 0 #1a63d8"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="4.5" width="12" height="9" rx="1.5" stroke="currentColor" stroke-width="1.4"></rect><path d="M2.4 5 6 2.5h3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg></a>
+      <div style="position:relative;display:flex;align-items:center">
+        <a href="#1d" aria-label="Approvals, 7 awaiting decision" title="Approvals" style="width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border-radius:7px;color:#4a5464;outline:2px solid #1a63d8;outline-offset:2px;position:relative"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.4"></circle><path d="M5.4 8.2 7.2 10l3.4-3.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg><span aria-hidden="true" style="position:absolute;top:2px;right:1px;min-width:17px;padding:1px 4px;border-radius:9px;background:#1a63d8;color:#fff;font:600 10px/1.4 'IBM Plex Mono',monospace;text-align:center">7</span></a>
+        <span role="tooltip" style="position:absolute;left:52px;white-space:nowrap;padding:5px 9px;background:#14181f;color:#fff;border-radius:5px;font:500 11.5px/1 'IBM Plex Sans',sans-serif;z-index:3">Approvals · 7 awaiting</span>
+      </div>
+      <a href="#1d" aria-label="Audit" title="Audit" style="width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border-radius:7px;color:#4a5464" style-hover="background:#f2f4f8"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 3.5h10M3 8h10M3 12.5h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg></a>
+      <a href="#1d" aria-label="Data Health, degraded" title="Data Health" style="width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border-radius:7px;color:#4a5464;position:relative" style-hover="background:#f2f4f8"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 8.5h3L6 5l2.4 6L10 8h4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg><span aria-hidden="true" style="position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:4px;background:#b06f0d;border:1.5px solid #fff"></span></a>
+    </nav>
+
+    <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+      <header style="flex:none;background:#fff;border-bottom:1px solid #e5e8ee">
+        <div style="height:56px;display:flex;align-items:center;gap:10px;padding:0 18px">
+          <span style="font:600 15px/1 'IBM Plex Sans',sans-serif;color:#14181f;letter-spacing:-.015em">MoneyTrace</span>
+          <span aria-hidden="true" style="width:1px;height:18px;background:#e5e8ee"></span>
+          <nav aria-label="Breadcrumb" style="display:flex;align-items:center;gap:6px;flex:1;min-width:0"><a href="#1d" style="font:400 12px/1 'IBM Plex Sans',sans-serif;color:#5b6472;text-decoration:none">Overview</a><span aria-hidden="true" style="color:#c3cad5;font-size:11px">/</span><span aria-current="page" style="font:600 12px/1 'IBM Plex Sans',sans-serif;color:#14181f">Cases</span></nav>
+          <span style="display:inline-flex;align-items:center;gap:6px;padding:5px 9px;background:#f5f2fb;border:1px solid #d3c8ea;border-radius:6px;font:600 11.5px/1 'IBM Plex Sans',sans-serif;color:#55408f"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6.2 2h3.6M6.9 2v3.6L4.1 11.6A1.6 1.6 0 0 0 5.5 14h5a1.6 1.6 0 0 0 1.4-2.4L9.1 5.6V2" stroke="#55408f" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>Synthetic Demo</span>
+          <button type="button" aria-label="Refresh current page" title="Refresh current page" style="width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #e5e8ee;border-radius:6px;background:#fff;cursor:pointer"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13.2 8a5.2 5.2 0 1 1-1.7-3.85" stroke="#4a5464" stroke-width="1.5" stroke-linecap="round"></path><path d="M13.4 1.9v2.9h-2.9" stroke="#4a5464" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>
+          <div style="display:flex;align-items:center;gap:8px;padding:4px 8px 4px 5px;background:#fff;border:1px solid #d7dce4;border-radius:6px">
+            <span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:5px;background:#eef3fd;color:#1450b4;font:600 10px/1 'IBM Plex Mono',monospace">DO</span>
+            <span style="display:flex;flex-direction:column;gap:1px"><span style="font:400 9px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;color:#8b95a5">DEMO ROLE</span><span style="font:600 11.5px/1 'IBM Plex Sans',sans-serif;color:#14181f">Demo Operator</span></span>
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.5 8 10.5l4-4" stroke="#8b95a5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          </div>
+          <button type="button" aria-label="Demo scenarios" title="Demo scenarios" style="width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #d7dce4;border-radius:6px;background:#fff;cursor:pointer"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="#4a5464" stroke-width="1.4"></rect><path d="M6.2 8h3.6M8 6.2v3.6" stroke="#4a5464" stroke-width="1.4" stroke-linecap="round"></path></svg></button>
+        </div>
+        <div style="height:38px;display:flex;align-items:center;gap:14px;padding:0 18px;background:#fafbfc;border-top:1px solid #eceef2">
+          <span style="display:inline-flex;align-items:center;gap:6px;font:400 11.5px/1 'IBM Plex Sans',sans-serif;color:#4a5464"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="#5b6472" stroke-width="1.4"></circle><path d="M8 5v3.2l2.2 1.3" stroke="#5b6472" stroke-width="1.4" stroke-linecap="round"></path></svg>Evaluated <abbr title="25 August 2026, 05:20 UTC" style="font-family:'IBM Plex Mono',monospace;color:#14181f;text-decoration:none;border-bottom:1px dotted #8b95a5">25 Aug 2026, 10:50 IST</abbr></span>
+          <span aria-hidden="true" style="width:1px;height:14px;background:#e5e8ee"></span>
+          <span style="display:inline-flex;align-items:center;gap:6px;font:400 11.5px/1 'IBM Plex Sans',sans-serif;color:#8b95a5">Manifest <span style="font-family:'IBM Plex Mono',monospace;color:#14181f;font-weight:500">7b42…91ef</span><button type="button" aria-label="Copy full manifest hash" title="Copy full manifest hash" style="width:20px;height:20px;border:0;background:transparent;cursor:pointer;display:inline-flex;align-items:center;justify-content:center"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="#5b6472" stroke-width="1.4"></rect><path d="M10.5 3.5H4A1.5 1.5 0 0 0 2.5 5v6.5" stroke="#5b6472" stroke-width="1.4" stroke-linecap="round"></path></svg></button></span>
+          <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:3px 8px;background:#fff;border:1px dashed #c3cad5;border-radius:5px;font:500 11px/1 'IBM Plex Sans',sans-serif;color:#5b6472"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="#5b6472" stroke-width="1.4"></circle><path d="M8 5v3.4M8 10.8v.2" stroke="#5b6472" stroke-width="1.4" stroke-linecap="round"></path></svg>Source unavailable</span>
+        </div>
+      </header>
+
+      <div role="status" style="flex:none;display:flex;align-items:flex-start;gap:10px;padding:11px 18px;background:#fff8ea;border-bottom:1px solid #f0dbb0">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="margin-top:1px;flex:none"><path d="M8 2.6 14.5 13.4H1.5L8 2.6Z" stroke="#b06f0d" stroke-width="1.4" stroke-linejoin="round"></path><path d="M8 6.4v3.1" stroke="#b06f0d" stroke-width="1.4" stroke-linecap="round"></path><circle cx="8" cy="11.3" r=".85" fill="#b06f0d"></circle></svg>
+        <div style="flex:1;font:400 12px/1.5 'IBM Plex Sans',sans-serif;color:#7a4d06"><b style="font-weight:600">Optional Razorpay Test source unavailable.</b> Synthetic bank and Route evidence remain available; deterministic demo conclusions are safe.</div>
+        <a href="#1d" style="flex:none;font:600 12px/1.5 'IBM Plex Sans',sans-serif;color:#7a4d06;text-decoration:underline;text-underline-offset:2px">View Data Health</a>
+      </div>
+
+      <main style="flex:1;overflow:hidden;padding:28px 24px 0">
+        <h2 style="margin:0;font:600 23px/1.2 'IBM Plex Sans',sans-serif;color:#14181f;letter-spacing:-.02em">Cases</h2>
+        <p style="margin:8px 0 0;max-width:64ch;font:400 13px/1.65 'IBM Plex Sans',sans-serif;color:#5b6472">Renders as the page's single h1 in the product; shown as h2 here to keep this spec document's heading order valid.</p>
+        <div style="margin-top:20px;height:820px;border:1px dashed #c3cad5;border-radius:8px;background:repeating-linear-gradient(135deg,#fff 0 9px,#f2f4f8 9px 18px);display:flex;align-items:center;justify-content:center"><span style="padding:7px 12px;background:#fff;border:1px solid #d7dce4;border-radius:5px;font:500 11.5px/1 'IBM Plex Mono',monospace;color:#5b6472">page content region — 976px measure</span></div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<div style="width:340px;flex:none;display:flex;flex-direction:column;gap:16px">
+  <div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5">TABLET BEHAVIOUR</div>
+  <p style="margin:0;font:400 12px/1.6 'IBM Plex Sans',sans-serif;color:#4a5464">Below 1280px the 248px nav collapses to a 72px icon rail. Labels survive twice over: as <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px">aria-label</span> + tooltip on hover/focus (shown on Approvals), and in full in the expanded drawer. The rail keeps the same five items in the same order; the active item keeps its inset blue rule.</p>
+  <p style="margin:0;font:400 12px/1.6 'IBM Plex Sans',sans-serif;color:#4a5464">Dataset time and manifest hash move out of the primary row into a compact 38px secondary row, so identity, environment, refresh, role and scenarios stay on one line. Source status sits at the row's end — still icon + text.</p>
+  <div style="padding:12px 13px;background:#f6f7f9;border:1px solid #e5e8ee;border-radius:6px">
+    <div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#14181f;margin-bottom:6px">DRAWER (EXPANDED RAIL)</div>
+    <div style="width:264px;background:#fff;border:1px solid #d7dce4;border-radius:8px;box-shadow:0 8px 24px rgba(16,24,40,.14);padding:14px 12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><span style="font:600 14px/1 'IBM Plex Sans',sans-serif;color:#14181f">MoneyTrace</span><button type="button" aria-label="Collapse navigation" style="width:24px;height:24px;border:0;background:transparent;cursor:pointer;color:#5b6472;font:400 15px/1 'IBM Plex Sans',sans-serif">×</button></div>
+      <div style="font:400 11px/1.35 'IBM Plex Sans',sans-serif;color:#8b95a5;margin:-8px 0 12px">Revenue integrity control plane</div>
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <span style="padding:8px 9px;border-radius:6px;font:500 12.5px/1 'IBM Plex Sans',sans-serif;color:#4a5464">Overview</span>
+        <span style="padding:8px 9px;border-radius:6px;font:600 12.5px/1 'IBM Plex Sans',sans-serif;color:#1450b4;background:#eef3fd;box-shadow:inset 3px 0 0 #1a63d8">Cases</span>
+        <span style="padding:8px 9px;border-radius:6px;font:500 12.5px/1 'IBM Plex Sans',sans-serif;color:#4a5464;display:flex;align-items:center">Approvals<span style="margin-left:auto;padding:1px 6px;border-radius:9px;background:#1a63d8;color:#fff;font:600 10.5px/1.5 'IBM Plex Mono',monospace">7</span></span>
+        <span style="padding:8px 9px;border-radius:6px;font:500 12.5px/1 'IBM Plex Sans',sans-serif;color:#4a5464">Audit</span>
+        <span style="padding:8px 9px;border-radius:6px;font:500 12.5px/1 'IBM Plex Sans',sans-serif;color:#4a5464;outline:2px solid #1a63d8;outline-offset:-1px;display:flex;align-items:center;gap:7px">Data Health<svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-label="Degraded" role="img"><path d="M8 2.6 14.5 13.4H1.5L8 2.6Z" stroke="#b06f0d" stroke-width="1.4" stroke-linejoin="round"></path></svg></span>
+      </div>
+    </div>
+    <p style="margin:10px 0 0;font:400 11.5px/1.55 'IBM Plex Sans',sans-serif;color:#5b6472">Controlled overlay: focus is trapped while open, Escape closes, focus returns to the expand button, and the trigger carries <span style="font-family:'IBM Plex Mono',monospace;font-size:11px">aria-expanded</span>.</p>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- 1e MOBILE -->
+<div class="dv-opt" id="1e">
+<div class="dv-olabel"><a class="dv-oid" href="#1e">1e</a>Mobile 390 × 844 — top app bar, navigation drawer, dataset &amp; controls sheet</div>
+<div class="dv-card" style="padding:22px;display:flex;gap:20px;align-items:flex-start">
+
+<div style="display:flex;flex-direction:column;gap:9px;flex:none">
+<div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5">A · DEFAULT</div>
+<div style="width:390px;height:844px;background:#f6f7f9;border:1px solid #dfe3ea;border-radius:14px;overflow:hidden;display:flex;flex-direction:column">
+  <div style="height:26px;flex:none;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 16px;font:500 10.5px/1 'IBM Plex Mono',monospace;color:#8b95a5"><span>10:50</span><span>synthetic device chrome</span></div>
+  <header style="flex:none;background:#fff;border-bottom:1px solid #e5e8ee">
+    <div style="height:56px;display:flex;align-items:center;gap:10px;padding:0 12px">
+      <button type="button" aria-label="Open navigation" aria-expanded="false" style="width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #e5e8ee;border-radius:8px;background:#fff;cursor:pointer"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h11" stroke="#4a5464" stroke-width="1.5" stroke-linecap="round"></path></svg></button>
+      <span style="font:600 15px/1 'IBM Plex Sans',sans-serif;color:#14181f;letter-spacing:-.015em">MoneyTrace</span>
+      <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 7px;background:#f5f2fb;border:1px solid #d3c8ea;border-radius:5px;font:600 10.5px/1 'IBM Plex Sans',sans-serif;color:#55408f"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6.2 2h3.6M6.9 2v3.6L4.1 11.6A1.6 1.6 0 0 0 5.5 14h5a1.6 1.6 0 0 0 1.4-2.4L9.1 5.6V2" stroke="#55408f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>Synthetic</span>
+      <button type="button" aria-label="Demo role: Demo Operator / Auditor" style="margin-left:auto;width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #d7dce4;border-radius:8px;background:#fff;cursor:pointer"><span aria-hidden="true" style="font:600 11px/1 'IBM Plex Mono',monospace;color:#1450b4">DO</span></button>
+    </div>
+    <button type="button" aria-expanded="false" style="width:100%;height:40px;display:flex;align-items:center;gap:8px;padding:0 12px;background:#fafbfc;border:0;border-top:1px solid #eceef2;cursor:pointer;text-align:left">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex:none"><circle cx="8" cy="8" r="6" stroke="#5b6472" stroke-width="1.4"></circle><path d="M8 5v3.2l2.2 1.3" stroke="#5b6472" stroke-width="1.4" stroke-linecap="round"></path></svg>
+      <span style="font:400 11.5px/1 'IBM Plex Sans',sans-serif;color:#4a5464">Evaluated <span style="font-family:'IBM Plex Mono',monospace;color:#14181f">25 Aug, 10:50 IST</span></span>
+      <span style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;font:500 11.5px/1 'IBM Plex Sans',sans-serif;color:#1a63d8">Dataset &amp; controls<svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 4l4 4-4 4" stroke="#1a63d8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+    </button>
+  </header>
+  <div role="status" style="flex:none;display:flex;gap:9px;padding:11px 12px;background:#fff8ea;border-bottom:1px solid #f0dbb0">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="margin-top:1px;flex:none"><path d="M8 2.6 14.5 13.4H1.5L8 2.6Z" stroke="#b06f0d" stroke-width="1.4" stroke-linejoin="round"></path><path d="M8 6.4v3.1" stroke="#b06f0d" stroke-width="1.4" stroke-linecap="round"></path><circle cx="8" cy="11.3" r=".85" fill="#b06f0d"></circle></svg>
+    <div><div style="font:600 12px/1.45 'IBM Plex Sans',sans-serif;color:#7a4d06">Optional Razorpay Test source unavailable.</div><div style="font:400 12px/1.45 'IBM Plex Sans',sans-serif;color:#7a4d06">Synthetic bank and Route evidence remain available; deterministic demo conclusions are safe.</div><a href="#1e" style="display:inline-block;margin-top:6px;font:600 12px/1 'IBM Plex Sans',sans-serif;color:#7a4d06;text-decoration:underline;text-underline-offset:2px">View Data Health</a></div>
+  </div>
+  <main style="flex:1;overflow:hidden;padding:20px 12px 0">
+    <nav aria-label="Breadcrumb" style="display:flex;align-items:center;gap:6px;margin-bottom:10px"><a href="#1e" style="font:400 11.5px/1 'IBM Plex Sans',sans-serif;color:#5b6472;text-decoration:none">Overview</a><span aria-hidden="true" style="color:#c3cad5;font-size:11px">/</span><span aria-current="page" style="font:600 11.5px/1 'IBM Plex Sans',sans-serif;color:#14181f">Cases</span></nav>
+    <h2 style="margin:0;font:600 21px/1.2 'IBM Plex Sans',sans-serif;color:#14181f;letter-spacing:-.02em">Cases</h2>
+    <p style="margin:7px 0 0;font:400 12.5px/1.6 'IBM Plex Sans',sans-serif;color:#5b6472">Single h1 in the product. Page body is out of scope for the shell.</p>
+    <div style="margin-top:16px;height:470px;border:1px dashed #c3cad5;border-radius:8px;background:repeating-linear-gradient(135deg,#fff 0 9px,#f2f4f8 9px 18px);display:flex;align-items:center;justify-content:center"><span style="padding:6px 10px;background:#fff;border:1px solid #d7dce4;border-radius:5px;font:500 11px/1 'IBM Plex Mono',monospace;color:#5b6472">page content region</span></div>
+  </main>
+</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:9px;flex:none">
+<div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5">B · NAVIGATION DRAWER OPEN</div>
+<div style="width:390px;height:844px;background:#f6f7f9;border:1px solid #dfe3ea;border-radius:14px;overflow:hidden;position:relative">
+  <div style="position:absolute;inset:0;background:rgba(16,24,40,.48)"></div>
+  <div role="dialog" aria-modal="true" aria-label="Navigation" style="position:absolute;left:0;top:0;bottom:0;width:320px;background:#fff;border-right:1px solid #e5e8ee;display:flex;flex-direction:column;padding:18px 14px 16px;box-shadow:8px 0 28px rgba(16,24,40,.18)">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+      <div><div style="display:flex;align-items:center;gap:8px"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M2 14.5c3.2 0 3.6-9 6.6-9s3.4 6 5.2 6c1.3 0 1.8-1.6 1.8-3" stroke="#1a63d8" stroke-width="1.7" stroke-linecap="round"></path><circle cx="16" cy="8.5" r="1.7" fill="#1a63d8"></circle></svg><span style="font:600 16px/1 'IBM Plex Sans',sans-serif;color:#14181f;letter-spacing:-.015em">MoneyTrace</span></div><div style="margin-top:6px;font:400 11.5px/1.35 'IBM Plex Sans',sans-serif;color:#8b95a5">Revenue integrity control plane</div></div>
+      <button type="button" aria-label="Close navigation" style="width:44px;height:44px;flex:none;display:inline-flex;align-items:center;justify-content:center;border:1px solid #e5e8ee;border-radius:8px;background:#fff;cursor:pointer;outline:2px solid #1a63d8;outline-offset:2px"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="#4a5464" stroke-width="1.5" stroke-linecap="round"></path></svg></button>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin:14px 0 12px;padding:6px 9px;background:#f5f2fb;border:1px solid #d3c8ea;border-radius:6px;width:max-content"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6.2 2h3.6M6.9 2v3.6L4.1 11.6A1.6 1.6 0 0 0 5.5 14h5a1.6 1.6 0 0 0 1.4-2.4L9.1 5.6V2" stroke="#55408f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="font:600 11.5px/1 'IBM Plex Sans',sans-serif;color:#55408f">Synthetic Demo</span></div>
+    <nav aria-label="Primary" style="display:flex;flex-direction:column;gap:3px">
+      <a href="#1e" style="display:flex;align-items:center;gap:11px;min-height:48px;padding:0 10px;border-radius:7px;text-decoration:none;color:#4a5464;font:500 14px/1 'IBM Plex Sans',sans-serif"><svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"></rect><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"></rect><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"></rect><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"></rect></svg>Overview</a>
+      <a href="#1e" aria-current="page" style="display:flex;align-items:center;gap:11px;min-height:48px;padding:0 10px;border-radius:7px;text-decoration:none;color:#1450b4;font:600 14px/1 'IBM Plex Sans',sans-serif;background:#eef3fd;box-shadow:inset 3px 0 0 #1a63d8"><svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="4.5" width="12" height="9" rx="1.5" stroke="currentColor" stroke-width="1.4"></rect><path d="M2.4 5 6 2.5h3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg>Cases</a>
+      <a href="#1e" style="display:flex;align-items:center;gap:11px;min-height:48px;padding:0 10px;border-radius:7px;text-decoration:none;color:#4a5464;font:500 14px/1 'IBM Plex Sans',sans-serif"><svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.4"></circle><path d="M5.4 8.2 7.2 10l3.4-3.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="flex:1">Approvals</span><span aria-label="7 approvals awaiting decision" style="padding:2px 7px;border-radius:10px;background:#1a63d8;color:#fff;font:600 11px/1.4 'IBM Plex Mono',monospace">7</span></a>
+      <a href="#1e" style="display:flex;align-items:center;gap:11px;min-height:48px;padding:0 10px;border-radius:7px;text-decoration:none;color:#4a5464;font:500 14px/1 'IBM Plex Sans',sans-serif"><svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 3.5h10M3 8h10M3 12.5h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg>Audit</a>
+      <a href="#1e" style="display:flex;align-items:center;gap:11px;min-height:48px;padding:0 10px;border-radius:7px;text-decoration:none;color:#4a5464;font:500 14px/1 'IBM Plex Sans',sans-serif"><svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 8.5h3L6 5l2.4 6L10 8h4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="flex:1">Data Health</span><span style="display:inline-flex;align-items:center;gap:5px;font:500 11px/1 'IBM Plex Sans',sans-serif;color:#7a4d06"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.6 14.5 13.4H1.5L8 2.6Z" stroke="#b06f0d" stroke-width="1.4" stroke-linejoin="round"></path></svg>Degraded</span></a>
+    </nav>
+    <div style="margin-top:auto;padding-top:14px;border-top:1px solid #eceef2">
+      <div style="font:400 9.5px/1 'IBM Plex Mono',monospace;letter-spacing:.07em;color:#8b95a5;margin-bottom:6px">DEMO ROLE</div>
+      <div style="display:flex;align-items:center;gap:9px"><span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:6px;background:#eef3fd;color:#1450b4;font:600 11px/1 'IBM Plex Mono',monospace">DO</span><span style="display:flex;flex-direction:column"><span style="font:600 13px/1.3 'IBM Plex Sans',sans-serif;color:#14181f">Demo Operator / Auditor</span><span style="font:400 11px/1.3 'IBM Plex Mono',monospace;color:#8b95a5">user_operator</span></span><span style="margin-left:auto;font:500 12px/1 'IBM Plex Sans',sans-serif;color:#1a63d8">Change</span></div>
+    </div>
+  </div>
+  <div aria-hidden="true" style="position:absolute;right:14px;top:120px;width:190px;padding:11px 12px;background:#14181f;color:#fff;border-radius:8px;font:400 11px/1.55 'IBM Plex Sans',sans-serif">Focus trapped to the drawer · Escape closes · focus returns to the trigger · same five items, same order</div>
+</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:9px;flex:none">
+<div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5">C · DATASET &amp; CONTROLS SHEET</div>
+<div style="width:390px;height:844px;background:#f6f7f9;border:1px solid #dfe3ea;border-radius:14px;overflow:hidden;position:relative">
+  <div style="position:absolute;inset:0;background:rgba(16,24,40,.48)"></div>
+  <div role="dialog" aria-modal="true" aria-labelledby="sheet-title" style="position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:14px 14px 0 0;padding:16px 14px 22px;box-shadow:0 -8px 28px rgba(16,24,40,.2)">
+    <div style="width:38px;height:4px;border-radius:2px;background:#d7dce4;margin:0 auto 14px"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><h3 id="sheet-title" style="margin:0;font:600 15px/1 'IBM Plex Sans',sans-serif;color:#14181f">Dataset &amp; demo controls</h3><button type="button" aria-label="Close" style="width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #e5e8ee;border-radius:8px;background:#fff;cursor:pointer"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="#4a5464" stroke-width="1.5" stroke-linecap="round"></path></svg></button></div>
+    <div style="display:flex;flex-direction:column;gap:1px;border:1px solid #e5e8ee;border-radius:8px;overflow:hidden">
+      <div style="display:flex;flex-direction:column;gap:3px;padding:13px 12px;background:#fff"><span style="font:400 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.06em;color:#8b95a5">EVALUATED</span><span style="font:500 13px/1.4 'IBM Plex Sans',sans-serif;color:#14181f">25 Aug 2026, 10:50 IST</span><span style="font:400 11.5px/1.4 'IBM Plex Mono',monospace;color:#5b6472">2026-08-25 05:20 UTC · dataset evaluation time</span></div>
+      <div style="display:flex;align-items:center;gap:10px;padding:13px 12px;background:#fff;border-top:1px solid #eceef2"><span style="display:flex;flex-direction:column;gap:3px;flex:1"><span style="font:400 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.06em;color:#8b95a5">MANIFEST</span><span style="font:500 13px/1.4 'IBM Plex Mono',monospace;color:#14181f">7b42…91ef</span><span style="font:400 11px/1.4 'IBM Plex Sans',sans-serif;color:#8b95a5">Read-only forensic metadata</span></span><button type="button" aria-label="Copy full manifest hash" style="width:44px;height:44px;flex:none;display:inline-flex;align-items:center;justify-content:center;border:1px solid #d7dce4;border-radius:8px;background:#fff;cursor:pointer"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="#4a5464" stroke-width="1.4"></rect><path d="M10.5 3.5H4A1.5 1.5 0 0 0 2.5 5v6.5" stroke="#4a5464" stroke-width="1.4" stroke-linecap="round"></path></svg></button></div>
+      <div style="display:flex;align-items:center;gap:10px;padding:13px 12px;background:#fff;border-top:1px solid #eceef2"><span style="flex:1;display:flex;flex-direction:column;gap:3px"><span style="font:400 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.06em;color:#8b95a5">DATA SOURCES</span><span style="display:inline-flex;align-items:center;gap:6px;font:500 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#5b6472"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="#5b6472" stroke-width="1.4"></circle><path d="M8 5v3.4M8 10.8v.2" stroke="#5b6472" stroke-width="1.4" stroke-linecap="round"></path></svg>Razorpay Test — source unavailable</span><span style="display:inline-flex;align-items:center;gap:6px;font:500 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#1c6b32"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="#1c6b32" stroke-width="1.4"></circle><path d="M5.4 8.2 7.2 10l3.4-3.6" stroke="#1c6b32" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>Synthetic bank &amp; Route evidence available</span></span></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:9px;margin-top:14px">
+      <button type="button" style="min-height:48px;display:flex;align-items:center;gap:9px;padding:0 13px;border:1px solid #d7dce4;border-radius:8px;background:#fff;cursor:pointer;font:500 13.5px/1 'IBM Plex Sans',sans-serif;color:#14181f"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13.2 8a5.2 5.2 0 1 1-1.7-3.85" stroke="#4a5464" stroke-width="1.5" stroke-linecap="round"></path><path d="M13.4 1.9v2.9h-2.9" stroke="#4a5464" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>Refresh current page</button>
+      <button type="button" style="min-height:48px;display:flex;align-items:center;gap:9px;padding:0 13px;border:1px solid #d7dce4;border-radius:8px;background:#fff;cursor:pointer;font:500 13.5px/1 'IBM Plex Sans',sans-serif;color:#14181f;outline:2px solid #1a63d8;outline-offset:2px"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="#4a5464" stroke-width="1.4"></rect><path d="M6.2 8h3.6M8 6.2v3.6" stroke="#4a5464" stroke-width="1.4" stroke-linecap="round"></path></svg>Demo scenarios<span style="margin-left:auto;font:400 10.5px/1 'IBM Plex Mono',monospace;color:#8b95a5">operator only</span></button>
+      <div style="min-height:48px;display:flex;align-items:center;gap:9px;padding:0 13px;border:1px solid #e5e8ee;border-radius:8px;background:#fafbfc"><span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:#eef3fd;color:#1450b4;font:600 10.5px/1 'IBM Plex Mono',monospace">DO</span><span style="display:flex;flex-direction:column"><span style="font:600 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f">Demo Operator / Auditor</span><span style="font:400 10.5px/1.3 'IBM Plex Mono',monospace;color:#8b95a5">user_operator</span></span><span style="margin-left:auto;font:500 12.5px/1 'IBM Plex Sans',sans-serif;color:#1a63d8">Change role</span></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div style="width:320px;flex:none;display:flex;flex-direction:column;gap:14px">
+  <div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5">MOBILE RULES</div>
+  <p style="margin:0;font:400 12px/1.6 'IBM Plex Sans',sans-serif;color:#4a5464">The top bar always carries four things: navigation trigger, MoneyTrace wordmark, the environment badge, and the role trigger. Nothing about identity or environment is truncated or hidden — the badge shortens to "Synthetic" only with the flask glyph retained, and its accessible name stays "Synthetic Demo environment".</p>
+  <p style="margin:0;font:400 12px/1.6 'IBM Plex Sans',sans-serif;color:#4a5464">Dataset time stays visible in a 40px strip that doubles as the sheet trigger; manifest hash, refresh and Demo scenarios move into the structured sheet rather than an overflow menu, so each row can carry its own label, value and secondary explanation.</p>
+  <p style="margin:0;font:400 12px/1.6 'IBM Plex Sans',sans-serif;color:#4a5464">Degraded and reset banners are never suppressed at small sizes; they wrap to multiple lines and keep the "View Data Health" action as a full tap target. All touch targets are ≥44px.</p>
+  <div style="padding:12px 13px;background:#f6f7f9;border:1px solid #e5e8ee;border-radius:6px;font:400 11.5px/1.6 'IBM Plex Sans',sans-serif;color:#4a5464"><b style="font-weight:600;color:#14181f">MobileNavigationDrawer</b> — <span style="font-family:'IBM Plex Mono',monospace;font-size:11px">role="dialog" aria-modal="true"</span>, focus moved to the close button on open, focus trapped, Escape and scrim tap close, focus restored to the trigger, background inert. Slide-in is a 160ms transform; under <span style="font-family:'IBM Plex Mono',monospace;font-size:11px">prefers-reduced-motion</span> the drawer simply appears.</div>
+</div>
+</div>
+</div>
+
+<!-- 1f ARTIFACT CLASSES + STATUS LANGUAGE -->
+<div class="dv-opt" id="1f">
+<div class="dv-olabel"><a class="dv-oid" href="#1f">1f</a>Artifact classes &amp; status language — shared vocabulary the shell must keep distinct</div>
+<div class="dv-card" style="padding:22px;width:1450px;display:flex;flex-direction:column;gap:22px">
+
+<div>
+<div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5;margin-bottom:12px">NINE ARTIFACT CLASSES · LABEL + GLYPH + BORDER + TINT + HEADING TREATMENT ARE ALL DISTINCT</div>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+
+<div style="padding:12px 13px;background:#f1f4f8;border:1px solid #ccd6e4;border-radius:7px">
+  <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect width="12" height="12" rx="1.5" fill="#2c3e55"></rect></svg><span style="font:600 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.08em;color:#2c3e55">SOURCE FACT</span></div>
+  <div style="font:600 13px/1.35 'IBM Plex Sans',sans-serif;color:#14181f">Ingested field, unmodified</div>
+  <p style="margin:5px 0 0;font:400 11.5px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464">Solid slate square, filled glyph. Never re-labelled as evidence or conclusion.</p>
+</div>
+
+<div style="padding:12px 13px;background:#eef3fd;border:1px solid #c6d9f7;border-radius:7px">
+  <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 0l6 6-6 6L0 6z" fill="#1450b4"></path></svg><span style="font:600 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.08em;color:#1450b4">DERIVED CONTROL</span></div>
+  <div style="font:600 13px/1.35 'IBM Plex Sans',sans-serif;color:#14181f">Computed from source facts</div>
+  <p style="margin:5px 0 0;font:400 11.5px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464">Diamond glyph, blue tint. Always shows the inputs it was derived from.</p>
+</div>
+
+<div style="padding:12px 13px;background:#f5f2fb;border:1px dashed #c3b2e4;border-radius:7px">
+  <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="none" stroke="#55408f" stroke-width="2"></circle></svg><span style="font:600 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.08em;color:#55408f">OFFLINE DEMO INVESTIGATION</span></div>
+  <div style="font:600 13px/1.35 'IBM Plex Sans',sans-serif;color:#14181f">Analysis on synthetic data</div>
+  <p style="margin:5px 0 0;font:400 11.5px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464">Dashed border marks non-production reasoning. Candidates are candidates, never verified links.</p>
+</div>
+
+<div style="padding:12px 13px;background:#ecf6f4;border:1px solid #bfe0d8;border-radius:7px">
+  <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 0.5 11.5 11h-11z" fill="#10614d"></path></svg><span style="font:600 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.08em;color:#10614d">POLICY DECISION</span></div>
+  <div style="font:600 13px/1.35 'IBM Plex Sans',sans-serif;color:#14181f">Deterministic rule outcome</div>
+  <p style="margin:5px 0 0;font:400 11.5px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464">Triangle glyph, teal. Cites policy id and version; no probabilistic language.</p>
+</div>
+
+<div style="padding:12px 13px;background:#edf6ef;border:1px solid #c3e2c9;border-radius:7px">
+  <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="6" fill="#1c6b32"></circle><path d="M3.4 6.2 5.2 8l3.4-3.6" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="font:600 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.08em;color:#1c6b32">HUMAN APPROVAL</span></div>
+  <div style="font:600 13px/1.35 'IBM Plex Sans',sans-serif;color:#14181f">Named person, timestamped</div>
+  <p style="margin:5px 0 0;font:400 11.5px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464">Filled circle-check. Records the demo identity that decided, not "the system".</p>
+</div>
+
+<div style="padding:12px 13px;background:#fff8ea;border:1px dashed #e0bd78;border-radius:7px">
+  <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="1" width="10" height="10" rx="1" fill="none" stroke="#7a4d06" stroke-width="1.6" stroke-dasharray="3 2"></rect></svg><span style="font:600 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.08em;color:#7a4d06">SIMULATED ACTION</span></div>
+  <div style="font:600 13px/1.35 'IBM Plex Sans',sans-serif;color:#14181f">No money moved</div>
+  <p style="margin:5px 0 0;font:400 11.5px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464">Dashed amber square. Reads "Action acknowledged—not yet verified", never "Success".</p>
+</div>
+
+<div style="padding:12px 13px;background:#fff;border:1px solid #b8ccea;border-left:3px solid #1a63d8;border-radius:7px">
+  <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 0.8l5.2 5.2L6 11.2.8 6z" fill="none" stroke="#1a63d8" stroke-width="1.8"></path></svg><span style="font:600 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.08em;color:#1450b4">VERIFICATION EVIDENCE</span></div>
+  <div style="font:600 13px/1.35 'IBM Plex Sans',sans-serif;color:#14181f">Independent bank record</div>
+  <p style="margin:5px 0 0;font:400 11.5px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464">White surface with a hard blue rule. Downstream acknowledgement and recipient settlement never qualify.</p>
+</div>
+
+<div style="padding:12px 13px;background:#fafbfc;border:1px solid #d7dce4;border-radius:7px;box-shadow:inset 0 -3px 0 #eceef2">
+  <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect y="2" width="12" height="2.4" rx="1" fill="#3a4453"></rect><rect y="7.6" width="12" height="2.4" rx="1" fill="#3a4453"></rect></svg><span style="font:600 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.08em;color:#3a4453">RECONCILIATION</span></div>
+  <div style="font:600 13px/1.35 'IBM Plex Sans',sans-serif;color:#14181f">Two ledgers compared</div>
+  <p style="margin:5px 0 0;font:400 11.5px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464">Paired-bar glyph. States both sides and the residual, including "No exposure".</p>
+</div>
+
+<div style="padding:12px 13px;background:#14181f;border:1px solid #14181f;border-radius:7px">
+  <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="2" width="8" height="8" fill="#f2f4f8"></rect></svg><span style="font:600 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.08em;color:#f2f4f8">AUDIT</span></div>
+  <div style="font:600 13px/1.35 'IBM Plex Sans',sans-serif;color:#fff">Append-only record</div>
+  <p style="margin:5px 0 0;font:400 11.5px/1.55 'IBM Plex Sans',sans-serif;color:#b0b8c4">Inverted surface — visually unmistakable. Includes denied attempts and role changes.</p>
+</div>
+</div>
+</div>
+
+<div style="display:flex;gap:20px;align-items:flex-start">
+  <div style="flex:1;min-width:0">
+    <div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5;margin-bottom:12px">STATUS LANGUAGE · EXPLICIT ONLY</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+      <span style="display:inline-flex;align-items:center;gap:7px;padding:8px 11px;background:#fff8ea;border:1px solid #f0dbb0;border-radius:6px;font:500 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#7a4d06"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="#b06f0d" stroke-width="1.4"></circle><path d="M8 5v3.2l2.2 1.3" stroke="#b06f0d" stroke-width="1.4" stroke-linecap="round"></path></svg>Awaiting bank evidence</span>
+      <span style="display:inline-flex;align-items:center;gap:7px;padding:8px 11px;background:#fff8ea;border:1px dashed #e0bd78;border-radius:6px;font:500 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#7a4d06"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" stroke="#b06f0d" stroke-width="1.4" stroke-dasharray="3 2"></rect></svg>Action acknowledged—not yet verified</span>
+      <span style="display:inline-flex;align-items:center;gap:7px;padding:8px 11px;background:#fdf2f0;border:1px solid #e9c2bb;border-radius:6px;font:500 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#8f1d12"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="#b42318" stroke-width="1.4"></circle><path d="M8 5v3.3" stroke="#b42318" stroke-width="1.5" stroke-linecap="round"></path><circle cx="8" cy="10.8" r=".85" fill="#b42318"></circle></svg>Conflicting evidence—automatic closure blocked</span>
+      <span style="display:inline-flex;align-items:center;gap:7px;padding:8px 11px;background:#f1f4f8;border:1px solid #ccd6e4;border-radius:6px;font:500 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#2c3e55"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13.2 8a5.2 5.2 0 1 1-1.7-3.85" stroke="#2c3e55" stroke-width="1.5" stroke-linecap="round"></path><path d="M13.4 1.9v2.9h-2.9" stroke="#2c3e55" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>Reversed after refund</span>
+      <span style="display:inline-flex;align-items:center;gap:7px;padding:8px 11px;background:#edf6ef;border:1px solid #c3e2c9;border-radius:6px;font:500 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#1c6b32"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="#1c6b32" stroke-width="1.4"></circle><path d="M5.4 8.2 7.2 10l3.4-3.6" stroke="#1c6b32" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>No exposure</span>
+      <span style="display:inline-flex;align-items:center;gap:7px;padding:8px 11px;background:#fafbfc;border:1px dashed #c3cad5;border-radius:6px;font:500 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#5b6472"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 13 13 3" stroke="#5b6472" stroke-width="1.4" stroke-linecap="round"></path><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" stroke="#5b6472" stroke-width="1.4"></rect></svg>No data</span>
+      <span style="display:inline-flex;align-items:center;gap:7px;padding:8px 11px;background:#fafbfc;border:1px dashed #c3cad5;border-radius:6px;font:500 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#5b6472"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="#5b6472" stroke-width="1.4"></circle><path d="M8 5v3.4M8 10.8v.2" stroke="#5b6472" stroke-width="1.4" stroke-linecap="round"></path></svg>Source unavailable</span>
+      <span style="display:inline-flex;align-items:center;gap:7px;padding:8px 11px;background:#fff;border:1px solid #e5e8ee;border-radius:6px;font:400 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#8b95a5;text-decoration:line-through">Done · Success · AI verified</span>
+    </div>
+  </div>
+  <div style="width:430px;flex:none;padding:14px 15px;background:#14181f;border-radius:8px">
+    <div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5;margin-bottom:9px">MONEY FORMATTING — BINDING DESIGN ANNOTATION</div>
+    <p style="margin:0 0 10px;font:400 12px/1.6 'IBM Plex Sans',sans-serif;color:#e5e8ee">API money arrives as a <b style="font-weight:600;color:#fff">decimal string in minor units</b>. All display formatting must go through BigInt. <b style="font-weight:600;color:#fff">Never</b> <span style="font-family:'IBM Plex Mono',monospace">Number()</span>, <span style="font-family:'IBM Plex Mono',monospace">parseFloat()</span>, or floating-point arithmetic — including intermediate sums, sorting keys, and chart values.</p>
+    <div style="padding:10px 11px;background:#20262f;border-radius:6px;font:400 11.5px/1.75 'IBM Plex Mono',monospace;color:#c9d3e0">amount_minor: "1250075"<br><span style="color:#7f8ea3">// render</span> BigInt(amount_minor) → ₹12,500.75<br><span style="color:#e08a7a">// forbidden</span> Number(amount_minor)/100</div>
+    <p style="margin:10px 0 0;font:400 11.5px/1.6 'IBM Plex Sans',sans-serif;color:#b0b8c4">Amounts render in monospace with tabular figures, right-aligned in tables, currency code stated once per column header. Negative values use a leading minus and never colour alone.</p>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- 1g ACCESSIBILITY -->
+<div class="dv-opt" id="1g">
+<div class="dv-olabel"><a class="dv-oid" href="#1g">1g</a>Accessibility, focus &amp; motion annotations</div>
+<div class="dv-card" style="padding:22px;width:1450px;display:grid;grid-template-columns:repeat(3,1fr);gap:20px">
+
+<div style="display:flex;flex-direction:column;gap:12px">
+  <div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5">FOCUS — 2px #1a63d8, 2px OFFSET</div>
+  <div style="display:flex;flex-direction:column;gap:12px;padding:16px;background:#f6f7f9;border:1px solid #e5e8ee;border-radius:8px">
+    <span style="display:inline-flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;background:#eef3fd;color:#1450b4;font:600 13.5px/1 'IBM Plex Sans',sans-serif;box-shadow:inset 3px 0 0 #1a63d8;outline:2px solid #1a63d8;outline-offset:2px;width:max-content">Nav item, active + focused</span>
+    <span style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #e5e8ee;border-radius:6px;background:#fff;outline:2px solid #1a63d8;outline-offset:2px"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13.2 8a5.2 5.2 0 1 1-1.7-3.85" stroke="#4a5464" stroke-width="1.5" stroke-linecap="round"></path><path d="M13.4 1.9v2.9h-2.9" stroke="#4a5464" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+    <span style="display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border:1px solid #d7dce4;border-radius:6px;background:#fff;font:500 12.5px/1 'IBM Plex Sans',sans-serif;color:#14181f;outline:2px solid #1a63d8;outline-offset:2px;width:max-content">Demo scenarios</span>
+    <span style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:5px;background:#1a63d8;color:#fff;font:600 12px/1.5 'IBM Plex Sans',sans-serif;outline:2px solid #14181f;outline-offset:2px;width:max-content">Skip to main content</span>
+    <span style="display:inline-flex;align-items:center;gap:7px;padding:8px 10px;border:1px solid #d7dce4;border-radius:6px;background:#fff;font:600 12px/1 'IBM Plex Sans',sans-serif;color:#14181f;outline:2px solid #1a63d8;outline-offset:2px;width:max-content">Demo role ▾</span>
+  </div>
+  <p style="margin:0;font:400 12px/1.6 'IBM Plex Sans',sans-serif;color:#4a5464">One focus treatment across the shell, visible on both light and tinted surfaces; on the blue skip chip the ring switches to near-black to hold 3:1 against its own background. Focus is never removed on mouse users' behalf — <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px">:focus-visible</span> only.</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px">
+  <div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5">LANDMARKS &amp; NAMES</div>
+  <div style="padding:16px;background:#f6f7f9;border:1px solid #e5e8ee;border-radius:8px;font:400 11.5px/2 'IBM Plex Mono',monospace;color:#4a5464">
+    <div>header</div>
+    <div style="padding-left:14px">nav[aria-label="Breadcrumb"]</div>
+    <div style="padding-left:14px">button "Refresh current page"</div>
+    <div style="padding-left:14px">button "Demo role: …" aria-haspopup</div>
+    <div>nav[aria-label="Primary"]</div>
+    <div style="padding-left:14px">a[aria-current="page"]</div>
+    <div>div[role="status"] — degraded banner</div>
+    <div>div[role="alert"] — reset banner</div>
+    <div>main#main &gt; h1 (one per page)</div>
+    <div>div[role="status"] aria-live="polite" — role change</div>
+  </div>
+  <p style="margin:0;font:400 12px/1.6 'IBM Plex Sans',sans-serif;color:#4a5464">Every icon-only control has an accessible name and a matching tooltip with the same words. Tooltips are supplementary — never the only source of a control's name. The polite live region announces "Demo role changed to Finance Approver", "Manifest hash copied", and "Page refreshed".</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px">
+  <div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5">REDUCED MOTION &amp; CONTRAST</div>
+  <div style="display:flex;flex-direction:column;gap:9px">
+    <div style="display:flex;gap:9px;padding:11px 12px;background:#f6f7f9;border:1px solid #e5e8ee;border-radius:7px"><span style="flex:none;width:64px;font:600 10.5px/1.5 'IBM Plex Mono',monospace;color:#8b95a5">DEFAULT</span><span style="font:400 11.5px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464">Drawer 160ms transform; banner appears with a 120ms opacity fade; menu 100ms.</span></div>
+    <div style="display:flex;gap:9px;padding:11px 12px;background:#fff;border:1px solid #d7dce4;border-left:3px solid #14181f;border-radius:7px"><span style="flex:none;width:64px;font:600 10.5px/1.5 'IBM Plex Mono',monospace;color:#14181f">REDUCED</span><span style="font:400 11.5px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464">All of the above become instant state changes. No shimmer skeletons, no spinning refresh glyph, no pulsing badge. Loading is conveyed by <span style="font-family:'IBM Plex Mono',monospace;font-size:11px">aria-busy</span>, static skeletons and text ("Switching to Finance Approver…") — never by movement alone.</span></div>
+    <div style="padding:11px 12px;background:#f6f7f9;border:1px solid #e5e8ee;border-radius:7px">
+      <div style="font:600 10.5px/1 'IBM Plex Mono',monospace;color:#8b95a5;margin-bottom:8px">CONTRAST CHECKS</div>
+      <div style="display:flex;flex-direction:column;gap:5px;font:400 11.5px/1.5 'IBM Plex Mono',monospace;color:#4a5464">
+        <span>#14181f on #ffffff — 16.2:1</span>
+        <span>#5b6472 on #f6f7f9 — 6.1:1</span>
+        <span>#1450b4 on #eef3fd — 6.8:1</span>
+        <span>#7a4d06 on #fff8ea — 7.4:1</span>
+        <span>#ffffff on #8a5a08 — 6.4:1</span>
+        <span>#55408f on #f5f2fb — 7.2:1</span>
+      </div>
+      <p style="margin:8px 0 0;font:400 11.5px/1.55 'IBM Plex Sans',sans-serif;color:#4a5464">All pairs meet AA for body text; borders and glyphs hold 3:1 against their surfaces. Muted greys are reserved for supporting metadata that is duplicated in an accessible name.</p>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- 1h COMPONENT INVENTORY -->
+<div class="dv-opt" id="1h">
+<div class="dv-olabel"><a class="dv-oid" href="#1h">1h</a>Component inventory &amp; shell rules</div>
+<div class="dv-card" style="padding:22px;width:1450px;display:flex;gap:22px;align-items:flex-start">
+
+<div style="flex:1;min-width:0">
+  <div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5;margin-bottom:12px">NINE REUSABLE COMPONENTS</div>
+  <div style="display:flex;flex-direction:column;gap:1px;border:1px solid #e5e8ee;border-radius:8px;overflow:hidden">
+    <div style="display:grid;grid-template-columns:200px 1fr 210px;gap:14px;padding:9px 13px;background:#f6f7f9;border-bottom:1px solid #e5e8ee;font:600 10px/1.4 'IBM Plex Mono',monospace;letter-spacing:.07em;color:#5b6472"><span>COMPONENT</span><span>RESPONSIBILITY</span><span>STATES</span></div>
+    <div style="display:grid;grid-template-columns:200px 1fr 210px;gap:14px;padding:11px 13px;background:#fff;font:400 12px/1.5 'IBM Plex Sans',sans-serif;color:#4a5464"><span style="font-weight:600;color:#14181f;font-family:'IBM Plex Mono',monospace;font-size:11.5px">AppShell</span><span>Owns landmarks, banner slot, skip link, responsive breakpoints (≥1280 full nav, 768–1279 rail, &lt;768 drawer).</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px">desktop · rail · drawer</span></div>
+    <div style="display:grid;grid-template-columns:200px 1fr 210px;gap:14px;padding:11px 13px;background:#fafbfc;font:400 12px/1.5 'IBM Plex Sans',sans-serif;color:#4a5464"><span style="font-weight:600;color:#14181f;font-family:'IBM Plex Mono',monospace;font-size:11.5px">PrimaryNavigation</span><span>Fixed five items in fixed order; active indication; data-backed count badge.</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px">rest · hover · active · focus · badge/no-badge · collapsed</span></div>
+    <div style="display:grid;grid-template-columns:200px 1fr 210px;gap:14px;padding:11px 13px;background:#fff;font:400 12px/1.5 'IBM Plex Sans',sans-serif;color:#4a5464"><span style="font-weight:600;color:#14181f;font-family:'IBM Plex Mono',monospace;font-size:11.5px">EnvironmentBadge</span><span>Persistent, non-dismissible synthetic-environment statement.</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px">full · compact (mobile)</span></div>
+    <div style="display:grid;grid-template-columns:200px 1fr 210px;gap:14px;padding:11px 13px;background:#fafbfc;font:400 12px/1.5 'IBM Plex Sans',sans-serif;color:#4a5464"><span style="font-weight:600;color:#14181f;font-family:'IBM Plex Mono',monospace;font-size:11.5px">DatasetContext</span><span>Evaluation timestamp (IST + accessible UTC) and manifest hash with copy.</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px">inline · secondary row · sheet row · no data</span></div>
+    <div style="display:grid;grid-template-columns:200px 1fr 210px;gap:14px;padding:11px 13px;background:#fff;font:400 12px/1.5 'IBM Plex Sans',sans-serif;color:#4a5464"><span style="font-weight:600;color:#14181f;font-family:'IBM Plex Mono',monospace;font-size:11.5px">DemoRoleSwitcher</span><span>Four seeded identities; clears role-sensitive state and refetches on change.</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px">closed · open · changing · denied</span></div>
+    <div style="display:grid;grid-template-columns:200px 1fr 210px;gap:14px;padding:11px 13px;background:#fafbfc;font:400 12px/1.5 'IBM Plex Sans',sans-serif;color:#4a5464"><span style="font-weight:600;color:#14181f;font-family:'IBM Plex Mono',monospace;font-size:11.5px">GlobalStatusBanner</span><span>Degraded (non-blocking) and reset (command-disabling) system states.</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px">none · degraded · reset</span></div>
+    <div style="display:grid;grid-template-columns:200px 1fr 210px;gap:14px;padding:11px 13px;background:#fff;font:400 12px/1.5 'IBM Plex Sans',sans-serif;color:#4a5464"><span style="font-weight:600;color:#14181f;font-family:'IBM Plex Mono',monospace;font-size:11.5px">PageHeader</span><span>h1, one-line context, page-level action slot; owns top spacing rhythm.</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px">default · with actions · loading</span></div>
+    <div style="display:grid;grid-template-columns:200px 1fr 210px;gap:14px;padding:11px 13px;background:#fafbfc;font:400 12px/1.5 'IBM Plex Sans',sans-serif;color:#4a5464"><span style="font-weight:600;color:#14181f;font-family:'IBM Plex Mono',monospace;font-size:11.5px">Breadcrumbs</span><span>Page path or back context; trailing item is current and non-interactive.</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px">two-level · deep · back-only (mobile)</span></div>
+    <div style="display:grid;grid-template-columns:200px 1fr 210px;gap:14px;padding:11px 13px;background:#fff;font:400 12px/1.5 'IBM Plex Sans',sans-serif;color:#4a5464"><span style="font-weight:600;color:#14181f;font-family:'IBM Plex Mono',monospace;font-size:11.5px">MobileNavigationDrawer</span><span>Modal navigation with focus trap, Escape close and focus restore.</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px">closed · open · open + degraded</span></div>
+  </div>
+</div>
+
+<div style="width:400px;flex:none;display:flex;flex-direction:column;gap:12px">
+  <div style="font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.09em;color:#8b95a5">SHELL RULES</div>
+  <div style="padding:13px 14px;background:#f6f7f9;border:1px solid #e5e8ee;border-radius:7px"><div style="font:600 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f;margin-bottom:5px">Spacing rhythm</div><p style="margin:0;font:400 11.5px/1.6 'IBM Plex Sans',sans-serif;color:#4a5464">4px base. Control padding 8/10, chip gaps 6/8, header gutter 24, main gutter 40 (24 tablet, 12 mobile), 36px above the h1, 24px between h1 block and first content, 16px inside cards. Nav item height 34 desktop, 44 rail, 48 drawer.</p></div>
+  <div style="padding:13px 14px;background:#f6f7f9;border:1px solid #e5e8ee;border-radius:7px"><div style="font:600 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f;margin-bottom:5px">Surface hierarchy</div><p style="margin:0;font:400 11.5px/1.6 'IBM Plex Sans',sans-serif;color:#4a5464">Canvas #f6f7f9 → chrome and cards #ffffff → secondary strips #fafbfc → overlays #ffffff with a single 24px shadow. Elevation is used only for things that float (menu, drawer, sheet); everything else separates with 1px borders. Two background colours in the whole shell.</p></div>
+  <div style="padding:13px 14px;background:#f6f7f9;border:1px solid #e5e8ee;border-radius:7px"><div style="font:600 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f;margin-bottom:5px">Status treatment</div><p style="margin:0;font:400 11.5px/1.6 'IBM Plex Sans',sans-serif;color:#4a5464">Every status is glyph + text + tint. Amber is "safe warning", red is reserved for actual failure or blocked closure, dashed neutral means absent data, violet means environment. Colour alone never carries meaning, and no status string is vague.</p></div>
+  <div style="padding:13px 14px;background:#fff;border:1px solid #d7dce4;border-left:3px solid #1a63d8;border-radius:7px"><div style="font:600 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f;margin-bottom:5px">All visible state is API-derived</div><p style="margin:0;font:400 11.5px/1.6 'IBM Plex Sans',sans-serif;color:#4a5464">Nothing in this shell is inferred from build config, hostname or branding: badge counts, source status, manifest hash, evaluation time and available demo actions all come from capability and dataset responses. When a field is missing the UI says "No data" or "Source unavailable" — it never falls back to an optimistic default, and it never renders "Live".</p></div>
+  <div style="padding:13px 14px;background:#f5f2fb;border:1px solid #d3c8ea;border-radius:7px"><div style="font:600 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#55408f;margin-bottom:5px">Out of scope by rule</div><p style="margin:0;font:400 11.5px/1.6 'IBM Plex Sans',sans-serif;color:#4a5464">No chat launcher or assistant, no notification centre, no settings menu, no marketing illustration, no real-money badge, no KPIs in the shell, and no navigation item beyond the five above — including Controls, Reconciliation and Money Paths, which are surfaced inside cases, not in navigation.</p></div>
+</div>
+</div>
+</div>
+
+</div>
+<p class="dv-next">Try next: "extend <a class="dv-oid" href="#1a">1a</a> into the Case detail page using these artifact classes" · "show the Approvals page with the reset banner active" · "tighten the desktop header to a single 56px row"</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;bannerState&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;degraded&quot;,&quot;reset&quot;,&quot;clear&quot;],&quot;default&quot;:&quot;degraded&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Shell state&quot;},&quot;approvalCount&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:7,&quot;min&quot;:0,&quot;max&quot;:99,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Shell state&quot;},&quot;showPins&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Annotations&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const banner = this.props.bannerState ?? 'degraded';
+    const count = this.props.approvalCount ?? 7;
+    return {
+      showDegraded: banner === 'degraded',
+      showReset: banner === 'reset',
+      showPins: this.props.showPins ?? true,
+      approvalCount: count,
+      hasApprovals: count > 0
+    };
+  }
+}
+</script>
+</body>
+</html>

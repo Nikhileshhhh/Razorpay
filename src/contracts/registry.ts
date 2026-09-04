@@ -107,6 +107,12 @@ export const COMPONENTS: readonly NamedSchema[] = [
   { name: 'LinkDecisionResult', schema: api.LinkDecisionResult },
   { name: 'ControlLoopView', schema: api.ControlLoopView },
   { name: 'ApprovalListItem', schema: api.ApprovalListItem },
+  // Gate B4 §14.2 read models.
+  { name: 'OverviewView', schema: api.OverviewView },
+  { name: 'DataHealthView', schema: api.DataHealthView },
+  { name: 'DemoStatusView', schema: api.DemoStatusView },
+  { name: 'ReadinessView', schema: api.ReadinessView },
+  { name: 'AuditExportView', schema: api.AuditExportView },
 ];
 
 export type ResponseKind = 'api' | 'mutation' | 'list' | 'error';
@@ -186,9 +192,16 @@ export const API_ROUTES: readonly RouteSpec[] = [
   {
     method: 'post',
     path: '/v1/imports',
-    summary: 'Import a synthetic dataset manifest',
+    summary: 'Import the deterministic synthetic dataset (demo operator)',
     request: { body: 'ImportRequest' },
-    responses: [ok(202, 'Import accepted', 'mutation', 'ImportAccepted'), ...errs(400, 413, 422)],
+    responses: [
+      // Genuinely asynchronous (backend PRD §14.1): 202 while durably queued
+      // and not yet completed by the worker; 200 once a prior call (or a
+      // replay of this one) finds the seed already fully accepted.
+      ok(200, 'Import already accepted', 'mutation', 'ImportAccepted'),
+      ok(202, 'Import accepted (queued)', 'mutation', 'ImportAccepted'),
+      ...errs(400, 401, 403, 409, 413, 422, 429, 503),
+    ],
   },
   {
     method: 'get',
@@ -265,7 +278,7 @@ export const API_ROUTES: readonly RouteSpec[] = [
     request: { params: api.CaseIdParam, body: 'InvestigationRequest' },
     responses: [
       ok(202, 'Investigation accepted', 'mutation', 'InvestigationAccepted'),
-      ...errs(409, 422, 503),
+      ...errs(401, 403, 409, 422, 503),
     ],
   },
   {
@@ -273,28 +286,40 @@ export const API_ROUTES: readonly RouteSpec[] = [
     path: '/v1/cases/:id/evaluate-policy',
     summary: 'Evaluate policy for the current plan',
     request: { params: api.CaseIdParam, body: 'EvaluatePolicyRequest' },
-    responses: [ok(200, 'Policy decision', 'mutation', 'PolicyDecisionRecord'), ...errs(409, 422)],
+    responses: [
+      ok(200, 'Policy decision', 'mutation', 'PolicyDecisionRecord'),
+      ...errs(401, 403, 409, 422, 503),
+    ],
   },
   {
     method: 'post',
     path: '/v1/cases/:id/request-approval',
     summary: 'Request approval for a plan',
     request: { params: api.CaseIdParam, body: 'ApprovalRequest' },
-    responses: [ok(200, 'Approval requested', 'mutation', 'ApprovalRecord'), ...errs(409, 422)],
+    responses: [
+      ok(200, 'Approval requested', 'mutation', 'ApprovalRecord'),
+      ...errs(401, 403, 409, 422, 503),
+    ],
   },
   {
     method: 'post',
     path: '/v1/cases/:id/approve',
     summary: 'Approve a plan (server derives approver identity)',
     request: { params: api.CaseIdParam, body: 'ApproveRequest' },
-    responses: [ok(200, 'Approved', 'mutation', 'ApprovalRecord'), ...errs(403, 409, 422)],
+    responses: [
+      ok(200, 'Approved', 'mutation', 'ApprovalRecord'),
+      ...errs(401, 403, 409, 422, 503),
+    ],
   },
   {
     method: 'post',
     path: '/v1/cases/:id/reject',
     summary: 'Reject a plan',
     request: { params: api.CaseIdParam, body: 'RejectRequest' },
-    responses: [ok(200, 'Rejected', 'mutation', 'ApprovalRecord'), ...errs(403, 409, 422)],
+    responses: [
+      ok(200, 'Rejected', 'mutation', 'ApprovalRecord'),
+      ...errs(401, 403, 409, 422, 503),
+    ],
   },
   {
     method: 'post',
@@ -303,7 +328,7 @@ export const API_ROUTES: readonly RouteSpec[] = [
     request: { params: api.CaseIdParam, body: 'RequestMoreEvidenceRequest' },
     responses: [
       ok(200, 'More evidence requested', 'mutation', 'ApprovalRecord'),
-      ...errs(403, 409, 422),
+      ...errs(401, 403, 409, 422, 503),
     ],
   },
   {
@@ -311,72 +336,122 @@ export const API_ROUTES: readonly RouteSpec[] = [
     path: '/v1/approvals',
     summary: 'List approvals (cursor pagination, allowlisted filters)',
     request: { query: api.ListApprovalsQuery },
-    responses: [ok(200, 'Approval page', 'list', 'ApprovalListItem'), ...errs(400, 403)],
+    responses: [ok(200, 'Approval page', 'list', 'ApprovalListItem'), ...errs(400, 401, 403, 503)],
   },
   {
     method: 'get',
     path: '/v1/cases/:id/control-loop',
     summary: 'Get the current investigation/plan/policy/approval/action summary',
     request: { params: api.CaseIdParam },
-    responses: [ok(200, 'Control-loop view', 'api', 'ControlLoopView'), ...errs(403, 404)],
+    responses: [
+      ok(200, 'Control-loop view', 'api', 'ControlLoopView'),
+      ...errs(401, 403, 404, 503),
+    ],
   },
   {
     method: 'post',
     path: '/v1/cases/:id/execute',
     summary: 'Execute an approved plan',
     request: { params: api.CaseIdParam, body: 'ExecuteRequest' },
-    responses: [ok(202, 'Action reserved', 'mutation', 'ActionRecord'), ...errs(403, 409, 422)],
+    responses: [
+      ok(202, 'Action reserved', 'mutation', 'ActionRecord'),
+      ...errs(401, 403, 409, 422, 503),
+    ],
   },
   {
     method: 'get',
     path: '/v1/cases/:id/verification',
-    summary: 'Get verification contract + result',
+    summary: 'Get verification contract + result (ACK is distinct from verification)',
     request: { params: api.CaseIdParam },
-    responses: [ok(200, 'Verification view', 'api', 'VerificationView'), ...errs(403, 404)],
+    responses: [
+      ok(200, 'Verification view', 'api', 'VerificationView'),
+      ...errs(400, 401, 403, 404, 503),
+    ],
   },
   {
     method: 'post',
     path: '/v1/actions/:id/verification-checks',
-    summary: 'Run a verification check for an action',
+    summary: 'Run an idempotent verification check for an action',
     request: { params: api.ActionIdParam, body: 'VerificationCheckRequest' },
     responses: [
       ok(200, 'Verification evaluated', 'mutation', 'VerificationResult'),
-      ...errs(409, 422),
+      ...errs(400, 401, 403, 404, 409, 422, 429, 503),
     ],
   },
   {
     method: 'get',
     path: '/v1/cases/:id/audit',
-    summary: 'Audit replay (cursor pagination, filters)',
+    summary: 'Audit replay (cursor pagination, role-redacted)',
     request: { params: api.CaseIdParam, query: api.AuditQuery },
-    responses: [ok(200, 'Audit page', 'list', 'AuditRecord'), ...errs(403, 404)],
+    responses: [ok(200, 'Audit page', 'list', 'AuditRecord'), ...errs(400, 401, 403, 404, 503)],
+  },
+  {
+    method: 'get',
+    path: '/v1/cases/:id/audit/export',
+    summary: 'Export a redacted JSON audit bundle with a content hash',
+    request: { params: api.CaseIdParam },
+    responses: [
+      ok(200, 'Audit export bundle', 'api', 'AuditExportView'),
+      ...errs(400, 401, 403, 404, 503),
+    ],
   },
   {
     method: 'post',
     path: '/v1/agent-results',
-    summary: 'Record an untrusted agent result claim',
+    summary: 'Record an untrusted agent result claim (connector-authenticated)',
     request: { body: 'AgentResultClaim' },
-    responses: [ok(201, 'Claim accepted', 'mutation', 'ClaimAccepted'), ...errs(400, 409, 422)],
+    responses: [
+      ok(201, 'Claim accepted', 'mutation', 'ClaimAccepted'),
+      ok(200, 'Idempotent duplicate claim', 'mutation', 'ClaimAccepted'),
+      ...errs(400, 401, 403, 409, 413, 422, 429, 503),
+    ],
   },
   {
     method: 'get',
     path: '/v1/agent-results/:id',
     summary: 'Get an agent result claim and its evaluations',
     request: { params: api.AgentResultIdParam },
-    responses: [ok(200, 'Claim detail', 'api', 'AgentResultView'), ...errs(403, 404)],
+    responses: [
+      ok(200, 'Claim detail', 'api', 'AgentResultView'),
+      ...errs(400, 401, 403, 404, 503),
+    ],
+  },
+  {
+    method: 'get',
+    path: '/v1/overview',
+    summary: 'Computed synthetic KPIs and lifecycle distribution',
+    responses: [ok(200, 'Overview', 'api', 'OverviewView'), ...errs(400, 401, 403, 503)],
+  },
+  {
+    method: 'get',
+    path: '/v1/data-health',
+    summary: 'Source capability, dedupe/conflict counts, lag, and model mode',
+    responses: [ok(200, 'Data health', 'api', 'DataHealthView'), ...errs(400, 401, 403, 503)],
+  },
+  {
+    method: 'get',
+    path: '/v1/demo/status',
+    summary: 'Current seed, scenario steps, readiness, fixed clock, manifest hash',
+    responses: [ok(200, 'Demo status', 'api', 'DemoStatusView'), ...errs(400, 401, 403, 503)],
   },
   {
     method: 'post',
     path: '/v1/demo/reset',
     summary: 'Reset the deterministic demo (demo environment only)',
     request: { body: 'DemoResetRequest' },
-    responses: [ok(200, 'Reset', 'mutation', 'DemoStatus'), ...errs(403, 409)],
+    responses: [
+      ok(200, 'Reset', 'mutation', 'DemoStatus'),
+      ...errs(400, 401, 403, 409, 422, 429, 503),
+    ],
   },
   {
     method: 'post',
     path: '/v1/demo/scenarios/:id/advance',
     summary: 'Advance a demo scenario step (demo environment only)',
     request: { params: api.ScenarioIdParam, body: 'DemoAdvanceRequest' },
-    responses: [ok(200, 'Advanced', 'mutation', 'DemoAdvanceStatus'), ...errs(403, 409)],
+    responses: [
+      ok(200, 'Advanced', 'mutation', 'DemoAdvanceStatus'),
+      ...errs(400, 401, 403, 409, 422, 429, 503),
+    ],
   },
 ];

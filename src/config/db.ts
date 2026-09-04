@@ -13,13 +13,19 @@ import * as schema from './db-schema.js';
  * for query building in repositories.
  */
 export type Database = NodePgDatabase<typeof schema>;
+/** Transaction handle accepted by helpers that must participate in a caller's unit of work. */
+export type DatabaseTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+/** Read/write query surface shared by the root database and an active transaction. */
+export type DbExecutor = Database | DatabaseTransaction;
 
 let pool: Pool | undefined;
 let db: Database | undefined;
 
 export function getPool(databaseUrl: string): Pool {
   if (!pool) {
-    pool = new Pool({ connectionString: databaseUrl });
+    // Keep the API/worker pool bounded so the two processes plus pg-boss fit
+    // within small hosted PostgreSQL session-pool limits (Supabase free tier: 15).
+    pool = new Pool({ connectionString: databaseUrl, max: 4 });
   }
   return pool;
 }

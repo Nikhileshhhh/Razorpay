@@ -1,18 +1,79 @@
-import type { ReactElement } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { useState, type ReactElement } from 'react';
+import { IdentityProvider } from './identity.js';
+import { withRouteBoundary } from './RouteErrorBoundary.js';
+import { AppShell } from '../components/shell/AppShell.js';
+import { ApprovalReviewPage } from '../features/approvals/ApprovalReviewPage.js';
+import { AuditReplayPage } from '../features/audit/AuditReplayPage.js';
+import { CaseQueuePage } from '../features/cases/CaseQueuePage.js';
+import {
+  CaseWorkspacePage,
+  VerificationTimelinePage,
+} from '../features/cases/CaseWorkspacePage.js';
+import { DataHealthPage } from '../features/data-health/DataHealthPage.js';
+import { OverviewPage } from '../features/overview/OverviewPage.js';
+import { NotFoundState } from '../features/shell/states/StatePanels.js';
 
-/**
- * MoneyTrace web application shell (placeholder).
- *
- * MT-001 renders a minimal, honest placeholder — no fabricated metrics, no fake
- * AI "thinking", no mocked success state (CODEX_REVIEW_CHECKLIST §11). The real
- * operational shell, overview, and case queue are built in MT-019 using the
- * public Blade design system and real backend projections.
- */
 export function App(): ReactElement {
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            retry: false,
+            refetchOnWindowFocus: false,
+            staleTime: 30_000,
+          },
+          mutations: { retry: false },
+        },
+      }),
+  );
   return (
-    <main>
-      <h1>MoneyTrace</h1>
-      <p data-testid="scaffold-status">Scaffold ready. Feature screens are not implemented yet.</p>
-    </main>
+    <QueryClientProvider client={queryClient}>
+      <IdentityProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route element={withRouteBoundary('application-shell', <AppShell />)}>
+              <Route index element={<Navigate to="/overview" replace />} />
+              <Route path="/overview" element={withRouteBoundary('/overview', <OverviewPage />)} />
+              <Route path="/cases" element={withRouteBoundary('/cases', <CaseQueuePage />)} />
+              <Route
+                path="/cases/:caseId"
+                element={withRouteBoundary('/cases/:caseId', <CaseWorkspacePage />)}
+              />
+              <Route
+                path="/cases/:caseId/verification"
+                element={withRouteBoundary(
+                  '/cases/:caseId/verification',
+                  <VerificationTimelinePage />,
+                )}
+              />
+              <Route
+                path="/approvals"
+                element={withRouteBoundary('/approvals', <ApprovalReviewPage />)}
+              />
+              <Route path="/audit" element={withRouteBoundary('/audit', <AuditReplayPage />)} />
+              <Route
+                path="/data-health"
+                element={withRouteBoundary('/data-health', <DataHealthPage />)}
+              />
+              <Route
+                path="*"
+                element={withRouteBoundary(
+                  'not-found',
+                  <NotFoundState
+                    title="Page not found"
+                    body="The requested synthetic-demo page does not exist."
+                    backTo="/overview"
+                    backLabel="Return to Overview"
+                  />,
+                )}
+              />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </IdentityProvider>
+    </QueryClientProvider>
   );
 }

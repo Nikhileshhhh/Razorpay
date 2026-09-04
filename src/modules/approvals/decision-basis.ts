@@ -1,5 +1,5 @@
 import { and, desc, eq } from 'drizzle-orm';
-import type { Database } from '../../config/db.js';
+import type { DbExecutor } from '../../config/db.js';
 import {
   approvals as approvalsTable,
   cases,
@@ -78,7 +78,7 @@ export const AUTOMATIC_PLAN_BASIS_EXPIRY = '9999-12-31T23:59:59.000Z';
  * for the SAME live state.
  */
 export async function resolveBasisExpiry(
-  db: Database,
+  db: DbExecutor,
   ctx: TenantContext,
   planId: string,
 ): Promise<string> {
@@ -100,7 +100,7 @@ export async function resolveBasisExpiry(
  * to build a complete basis does not yet exist.
  */
 export async function rebuildDecisionBasis(
-  db: Database,
+  db: DbExecutor,
   ctx: TenantContext,
   input: LiveBasisInputs,
   expiresAt: string,

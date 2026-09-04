@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const BASE_URL = 'http://127.0.0.1:5173';
+const BASE_URL = 'http://127.0.0.1:5175';
 
 // Browser end-to-end tests.
 //
