@@ -5,6 +5,8 @@ import { actionAttempts, actions as actionsTable, auditEntries } from '../../con
 import type { TenantContext } from '../identity/tenant-context.js';
 import type { ToolActionId } from '../../contracts/plans.js';
 import { dispatchThroughAdapter, type AdapterOutcome } from './adapter-registry.js';
+import { MONEYTRACE_WORKER_ACTOR, type TrustedWorkerActor } from '../identity/worker-actor.js';
+import { ensurePendingVerificationInTransaction } from '../verification/verification-service.js';
 
 const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
   'ACKNOWLEDGED',
@@ -35,7 +37,12 @@ export async function dispatchAction(
   db: Database,
   ctx: TenantContext,
   actionId: string,
-  opts: { readonly forcedOutcome?: AdapterOutcome } = {},
+  opts: {
+    readonly forcedOutcome?: AdapterOutcome;
+    /** Deterministic crash injection used to prove DISPATCHING redelivery safety. */
+    readonly failAfterAdapterForTest?: boolean;
+  } = {},
+  workerActor: TrustedWorkerActor = MONEYTRACE_WORKER_ACTOR,
 ): Promise<void> {
   const rows = await db
     .select()
@@ -63,6 +70,9 @@ export async function dispatchAction(
     actionId,
     ...(opts.forcedOutcome ? { forcedOutcome: opts.forcedOutcome } : {}),
   });
+  if (opts.failAfterAdapterForTest) {
+    throw new Error('simulated post-adapter crash');
+  }
 
   const attemptNumber = action.attemptCount + 1;
   const acknowledgedAt = result.outcome === 'ACKNOWLEDGED' ? new Date() : null;
@@ -79,7 +89,7 @@ export async function dispatchAction(
     });
 
     const nextStatus = result.outcome === 'FAILED' ? 'FAILED' : 'VERIFICATION_PENDING';
-    await tx
+    const updated = await tx
       .update(actionsTable)
       .set({
         status: nextStatus,
@@ -95,7 +105,9 @@ export async function dispatchAction(
           eq(actionsTable.id, actionId),
           eq(actionsTable.status, 'DISPATCHING'),
         ),
-      );
+      )
+      .returning({ id: actionsTable.id });
+    if (updated.length !== 1) return;
 
     await tx.insert(auditEntries).values({
       id: `audit_${randomUUID()}`,
@@ -103,7 +115,7 @@ export async function dispatchAction(
       artifactType: 'ACTION',
       artifactId: actionId,
       actorId: null,
-      actorRole: 'worker',
+      actorRole: workerActor.role,
       details: {
         operation: 'action_dispatched',
         outcome: result.outcome,
@@ -111,5 +123,8 @@ export async function dispatchAction(
         external_reference: result.externalReference,
       },
     });
+    if (nextStatus === 'VERIFICATION_PENDING') {
+      await ensurePendingVerificationInTransaction(tx, ctx, actionId);
+    }
   });
 }

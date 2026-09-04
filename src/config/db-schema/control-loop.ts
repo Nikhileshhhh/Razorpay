@@ -75,6 +75,7 @@ export const approvals = pgTable(
     requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(0),
   },
   (t) => [index('approvals_case_idx').on(t.caseId, t.requestedAt)],
 );

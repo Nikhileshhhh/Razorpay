@@ -200,6 +200,19 @@ describe('tenant/FK/unique/check constraints', () => {
     expect(result.rows.map((row) => row.conname)).toEqual(expected);
   });
 
+  it('uses the stable runtime names for B3 race-recovery constraints', async () => {
+    const expected = [
+      'actions_idempotency_uq',
+      'entity_link_reviews_uq',
+      'investigations_uq',
+    ].sort();
+    const result = await client.query<{ conname: string }>(
+      `select conname from pg_constraint where conname = any($1::text[]) order by conname`,
+      [expected],
+    );
+    expect(result.rows.map((row) => row.conname)).toEqual(expected);
+  });
+
   it('rejects cross-tenant references for composite tenant FKs (real INSERTs, not just introspection)', async () => {
     await client.query(
       `insert into tenants (id, display_name, environment) values ('ten_xfk','Cross-Tenant FK Fixture','demo')
@@ -516,8 +529,8 @@ describe('tenant/FK/unique/check constraints', () => {
        values ('action_xfk4','ten_demo','case_xfk4','plan_xfk4','SUPPRESS_SIMULATED_RECOVERY','idem_xfk4','sha256:req-xfk4','AUTHORIZED')`,
     );
     await client.query(
-      `insert into agent_result_claims (id, tenant_id, external_agent_id, external_claim_id, economic_subject_key, claimed_amount_minor, result_type, attribution_method, claim_time)
-       values ('claim_xfk4','ten_demo','agent_xfk4','ext_claim_xfk4','order:xfk4:seller-1', 91, 'RECOVERY_PREVENTED', 'CORRELATED', now())`,
+      `insert into agent_result_claims (id, tenant_id, external_agent_id, external_claim_id, economic_subject_key, claimed_amount_minor, result_type, attribution_method, claim_time, request_hash)
+       values ('claim_xfk4','ten_demo','agent_xfk4','ext_claim_xfk4','order:xfk4:seller-1', 91, 'RECOVERY', 'CORRELATED', now(), 'sha256:claim-xfk4')`,
     );
 
     // ten_xfk3 fixtures: an independent, equally-valid case -> plan -> action
@@ -539,8 +552,8 @@ describe('tenant/FK/unique/check constraints', () => {
        values ('action_xfk4_other','ten_xfk3','case_xfk4_other','plan_xfk4_other','SUPPRESS_SIMULATED_RECOVERY','idem_xfk4_other','sha256:req-xfk4-other','AUTHORIZED')`,
     );
     await client.query(
-      `insert into agent_result_claims (id, tenant_id, external_agent_id, external_claim_id, economic_subject_key, claimed_amount_minor, result_type, attribution_method, claim_time)
-       values ('claim_xfk4_other','ten_xfk3','agent_xfk4_other','ext_claim_xfk4_other','order:xfk4-other:seller-1', 91, 'RECOVERY_PREVENTED', 'CORRELATED', now())`,
+      `insert into agent_result_claims (id, tenant_id, external_agent_id, external_claim_id, economic_subject_key, claimed_amount_minor, result_type, attribution_method, claim_time, request_hash)
+       values ('claim_xfk4_other','ten_xfk3','agent_xfk4_other','ext_claim_xfk4_other','order:xfk4-other:seller-1', 91, 'RECOVERY', 'CORRELATED', now(), 'sha256:claim-xfk4-other')`,
     );
     await client.query(
       `insert into ingest_events (id, tenant_id, source_system, source_event_type, event_time, payload_hash, raw_payload, raw_bytes, raw_representation, signature_status, dedupe_status, fallback_dedupe_key)

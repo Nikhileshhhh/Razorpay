@@ -21,6 +21,14 @@ export const ArtifactType = z.enum([
   'CASE_TRANSITION',
   'MANUAL_LINK',
   'ADMIN_CHANGE',
+  // Gate B4 additions (ADR 0002): unambiguous replay of claim, closure,
+  // reversal, dataset import, and demo command facts.
+  'AGENT_CLAIM',
+  'CLAIM_EVALUATION',
+  'RECEIVABLE_CLOSURE',
+  'RECONCILIATION_REVERSAL',
+  'DATASET_IMPORT',
+  'DEMO_COMMAND',
 ]);
 export type ArtifactType = z.infer<typeof ArtifactType>;
 

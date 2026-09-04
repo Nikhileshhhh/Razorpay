@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import type { Database } from '../../config/db.js';
-import { auditEntries, investigations, outbox as outboxTable } from '../../config/db-schema.js';
+import {
+  auditEntries,
+  cases,
+  investigations,
+  outbox as outboxTable,
+} from '../../config/db-schema.js';
 import { isUniqueViolation } from '../../config/errors.js';
 import type { TenantContext } from '../identity/tenant-context.js';
 import type { Env } from '../../config/env.js';
@@ -17,12 +22,20 @@ import {
 import {
   ModelGatewayTimeoutError,
   ModelGatewayUnavailableError,
+  type ModelGateway,
   type ModelGatewayResult,
 } from './model-gateway.js';
-import { getCase, CaseVersionConflictError, transitionCase } from '../cases/case-service.js';
-import { proposePlan } from '../policy/plan-service.js';
+import {
+  CaseVersionConflictError,
+  lockControlLoopCase,
+  transitionCaseInTransaction,
+} from '../cases/case-service.js';
+import { proposePlanInTransaction } from '../policy/plan-service.js';
 import { money } from '../../domain/money/money.js';
 import type { ToolParameters } from '../../contracts/plans.js';
+import { authorizeTenantActorForUpdate } from '../identity/identity-repository.js';
+import { contentHash } from '../../config/hashing.js';
+import type { CaseLifecycleState } from '../../domain/state-machines/case-lifecycle.js';
 
 export class InvestigationCaseNotFoundError extends Error {
   constructor() {
@@ -35,7 +48,6 @@ export interface RequestInvestigationInput {
   readonly caseId: string;
   readonly expectedCaseVersion?: number;
   readonly actorId: string;
-  readonly actorRole: string;
 }
 
 /**
@@ -49,15 +61,21 @@ export async function requestInvestigation(
   db: Database,
   ctx: TenantContext,
   input: RequestInvestigationInput,
-): Promise<{ readonly requestId: string }> {
-  const caseRow = await getCase(db, ctx, input.caseId);
-  if (!caseRow) throw new InvestigationCaseNotFoundError();
-  if (input.expectedCaseVersion !== undefined && caseRow.version !== input.expectedCaseVersion) {
-    throw new CaseVersionConflictError(input.caseId, input.expectedCaseVersion, caseRow.version);
-  }
-
-  const requestId = `investigation_req_${randomUUID()}`;
-  await db.transaction(async (tx) => {
+): Promise<{ readonly requestId: string; readonly resourceVersion: number }> {
+  return db.transaction(async (tx) => {
+    await lockControlLoopCase(tx, ctx, input.caseId);
+    const actor = await authorizeTenantActorForUpdate(tx, ctx, input.actorId, ['investigator']);
+    const caseRows = await tx
+      .select()
+      .from(cases)
+      .where(and(eq(cases.tenantId, ctx.tenantId), eq(cases.id, input.caseId)))
+      .limit(1);
+    const caseRow = caseRows[0];
+    if (!caseRow) throw new InvestigationCaseNotFoundError();
+    if (input.expectedCaseVersion !== undefined && caseRow.version !== input.expectedCaseVersion) {
+      throw new CaseVersionConflictError(input.caseId, input.expectedCaseVersion, caseRow.version);
+    }
+    const requestId = `investigation_req_${randomUUID()}`;
     await tx.insert(outboxTable).values({
       id: `outbox_${randomUUID()}`,
       tenantId: ctx.tenantId,
@@ -67,8 +85,7 @@ export async function requestInvestigation(
         tenant_id: ctx.tenantId,
         case_id: input.caseId,
         expected_case_version: input.expectedCaseVersion ?? null,
-        actor_id: input.actorId,
-        actor_role: input.actorRole,
+        actor_id: actor.userId,
       },
       status: 'pending',
     });
@@ -77,19 +94,24 @@ export async function requestInvestigation(
       tenantId: ctx.tenantId,
       artifactType: 'INVESTIGATION',
       artifactId: requestId,
-      actorId: input.actorId,
-      actorRole: input.actorRole,
-      details: { operation: 'investigation_requested', case_id: input.caseId },
+      actorId: actor.userId,
+      actorRole: 'investigator',
+      details: {
+        operation: 'investigation_requested',
+        case_id: input.caseId,
+        resource_version: caseRow.version,
+      },
     });
+    return { requestId, resourceVersion: caseRow.version };
   });
-  return { requestId };
 }
 
 export interface RunInvestigationInput {
   readonly caseId: string;
   readonly expectedCaseVersion?: number;
   readonly actorId: string;
-  readonly actorRole: string;
+  /** Test-only crash injection proving retry repair after the immutable insert. */
+  readonly failAfterInsertForTest?: boolean;
 }
 
 export interface RunInvestigationResult {
@@ -97,9 +119,9 @@ export interface RunInvestigationResult {
   readonly resultType: 'FINDING' | 'ABSTENTION' | 'SAFE_FAILURE';
 }
 
-async function callGatewayWithRetry(
-  gateway: ReturnType<typeof createModelGateway>,
-  request: Parameters<ReturnType<typeof createModelGateway>['investigate']>[0],
+export async function callGatewayWithRetry(
+  gateway: ModelGateway,
+  request: Parameters<ModelGateway['investigate']>[0],
 ): Promise<ModelGatewayResult | null> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
@@ -127,11 +149,21 @@ export async function runInvestigation(
   env: Pick<Env, 'MODEL_PROVIDER'> & { MODEL_API_URL?: string; MODEL_API_KEY?: string },
   input: RunInvestigationInput,
 ): Promise<RunInvestigationResult> {
-  const caseRow = await getCase(db, ctx, input.caseId);
-  if (!caseRow) throw new InvestigationCaseNotFoundError();
-  if (input.expectedCaseVersion !== undefined && caseRow.version !== input.expectedCaseVersion) {
-    throw new CaseVersionConflictError(input.caseId, input.expectedCaseVersion, caseRow.version);
-  }
+  const caseRow = await db.transaction(async (tx) => {
+    await lockControlLoopCase(tx, ctx, input.caseId);
+    await authorizeTenantActorForUpdate(tx, ctx, input.actorId, ['investigator']);
+    const rows = await tx
+      .select()
+      .from(cases)
+      .where(and(eq(cases.tenantId, ctx.tenantId), eq(cases.id, input.caseId)))
+      .limit(1);
+    const row = rows[0];
+    if (!row) throw new InvestigationCaseNotFoundError();
+    if (input.expectedCaseVersion !== undefined && row.version !== input.expectedCaseVersion) {
+      throw new CaseVersionConflictError(input.caseId, input.expectedCaseVersion, row.version);
+    }
+    return row;
+  });
 
   const pool = await collectCaseEvidencePool(db, ctx, input.caseId);
   const sealed = await sealCaseEvidence(db, ctx, pool);
@@ -160,11 +192,7 @@ export async function runInvestigation(
 
   const existingCheck = gatewayResult
     ? await db
-        .select({
-          id: investigations.id,
-          output: investigations.output,
-          failureClass: investigations.failureClass,
-        })
+        .select()
         .from(investigations)
         .where(
           and(
@@ -178,11 +206,10 @@ export async function runInvestigation(
         .limit(1)
     : [];
   if (existingCheck[0]) {
+    await ensureInvestigationArtifacts(db, ctx, input, existingCheck[0]);
     return {
       investigationId: existingCheck[0].id,
-      resultType: existingCheck[0].failureClass
-        ? 'SAFE_FAILURE'
-        : (existingCheck[0].output as { result_type: 'FINDING' | 'ABSTENTION' }).result_type,
+      resultType: classifyInvestigationResult(existingCheck[0]),
     };
   }
 
@@ -264,27 +291,43 @@ export async function runInvestigation(
   }
 
   try {
-    await db.insert(investigations).values({
-      id: investigationId,
-      tenantId: ctx.tenantId,
-      caseId: input.caseId,
-      evidenceSetHash: sealed.hash,
-      promptVersion,
-      modelConfigHash,
-      modelId,
-      gatewayMode,
-      output: finding ?? finalOutput,
-      failureClass,
-      createdAt,
+    await db.transaction(async (tx) => {
+      await lockControlLoopCase(tx, ctx, input.caseId);
+      await authorizeTenantActorForUpdate(tx, ctx, input.actorId, ['investigator']);
+      const currentRows = await tx
+        .select({ version: cases.version })
+        .from(cases)
+        .where(and(eq(cases.tenantId, ctx.tenantId), eq(cases.id, input.caseId)))
+        .limit(1);
+      if (!currentRows[0]) throw new InvestigationCaseNotFoundError();
+      if (
+        input.expectedCaseVersion !== undefined &&
+        currentRows[0].version !== input.expectedCaseVersion
+      ) {
+        throw new CaseVersionConflictError(
+          input.caseId,
+          input.expectedCaseVersion,
+          currentRows[0].version,
+        );
+      }
+      await tx.insert(investigations).values({
+        id: investigationId,
+        tenantId: ctx.tenantId,
+        caseId: input.caseId,
+        evidenceSetHash: sealed.hash,
+        promptVersion,
+        modelConfigHash,
+        modelId,
+        gatewayMode,
+        output: finding ?? finalOutput,
+        failureClass,
+        createdAt,
+      });
     });
   } catch (error) {
     if (isUniqueViolation(error, 'investigations_uq')) {
       const raced = await db
-        .select({
-          id: investigations.id,
-          output: investigations.output,
-          failureClass: investigations.failureClass,
-        })
+        .select()
         .from(investigations)
         .where(
           and(
@@ -297,93 +340,148 @@ export async function runInvestigation(
         )
         .limit(1);
       if (raced[0]) {
+        await ensureInvestigationArtifacts(db, ctx, input, raced[0]);
         return {
           investigationId: raced[0].id,
-          resultType: raced[0].failureClass
-            ? 'SAFE_FAILURE'
-            : (raced[0].output as { result_type: 'FINDING' | 'ABSTENTION' }).result_type,
+          resultType: classifyInvestigationResult(raced[0]),
         };
       }
     }
     throw error;
   }
 
-  await db.insert(auditEntries).values({
-    id: `audit_${randomUUID()}`,
-    tenantId: ctx.tenantId,
-    artifactType: 'INVESTIGATION',
-    artifactId: investigationId,
-    artifactHash: sealed.hash,
-    actorId: input.actorId,
-    actorRole: input.actorRole,
-    modelId,
-    promptVersion,
-    evidenceSetHash: sealed.hash,
-    details: {
-      result_type: finalOutput.result_type,
-      failure_class: failureClass,
-      gateway_mode: gatewayMode,
-    },
-  });
-
-  if (resultType === 'FINDING' && finding) {
-    const findingCode = finding.finding_code;
-    const templateId = FINDING_PLAN_TEMPLATE_MAP[findingCode];
-    const exposure = money(caseRow.exposureAmountMinor, caseRow.currency as 'INR');
-
-    const parameters: ToolParameters =
-      findingCode === 'MISSING_EXPECTED_TRANSFER'
-        ? {
-            tool_id: 'SIMULATE_TRANSFER_REMEDIATION',
-            economic_subject: caseRow.subjectId,
-            expectation_id: caseRow.expectationId,
-          }
-        : {
-            tool_id: 'SUPPRESS_SIMULATED_RECOVERY',
-            economic_subject: caseRow.subjectId,
-            recovery_id: null,
-          };
-
-    await proposePlan(db, ctx, {
-      caseId: input.caseId,
-      templateId,
-      parameters,
-      authorityLevel: findingCode === 'MISSING_EXPECTED_TRANSFER' ? 'L3' : 'L2',
-      maximumAmountImpact:
-        findingCode === 'MISSING_EXPECTED_TRANSFER'
-          ? exposure
-          : money(0n, caseRow.currency as 'INR'),
-    });
-
-    await safeTransition(db, ctx, input.caseId, caseRow.lifecycleState, 'investigating');
-    await safeTransition(db, ctx, input.caseId, 'investigating', 'recommendation_ready');
-
-    return { investigationId, resultType: 'FINDING' };
-  }
-
-  await safeTransition(db, ctx, input.caseId, caseRow.lifecycleState, 'investigating');
-  await safeTransition(db, ctx, input.caseId, 'investigating', 'abstained');
-  return { investigationId, resultType: failureClass ? 'SAFE_FAILURE' : 'ABSTENTION' };
+  const insertedRows = await db
+    .select()
+    .from(investigations)
+    .where(and(eq(investigations.tenantId, ctx.tenantId), eq(investigations.id, investigationId)))
+    .limit(1);
+  if (input.failAfterInsertForTest) throw new Error('simulated post-investigation-insert crash');
+  await ensureInvestigationArtifacts(db, ctx, input, insertedRows[0]!);
+  return { investigationId, resultType: classifyInvestigationResult(insertedRows[0]!) };
 }
 
-async function safeTransition(
+function classifyInvestigationResult(
+  row: typeof investigations.$inferSelect,
+): RunInvestigationResult['resultType'] {
+  if (row.failureClass) return 'SAFE_FAILURE';
+  const output = row.output as Record<string, unknown> | null;
+  return output && typeof output.finding_code === 'string' ? 'FINDING' : 'ABSTENTION';
+}
+
+function stableEffectId(prefix: string, investigationId: string, effect: string): string {
+  return `${prefix}_${contentHash({ investigationId, effect }).slice(7, 39)}`;
+}
+
+/**
+ * Retry-repairable downstream materialization. The investigation row is the
+ * immutable source of truth; audit, plan, and lifecycle effects are ensured in
+ * one case-serialized transaction and use deterministic identities.
+ */
+async function ensureInvestigationArtifacts(
   db: Database,
   ctx: TenantContext,
-  caseId: string,
-  from: string,
-  to: Parameters<typeof transitionCase>[2]['toState'],
+  input: RunInvestigationInput,
+  investigation: typeof investigations.$inferSelect,
 ): Promise<void> {
-  const current = await getCase(db, ctx, caseId);
-  if (!current || current.lifecycleState === to) return;
-  try {
-    await transitionCase(db, ctx, {
-      caseId,
-      toState: to,
-      reason: `investigation:${from}->${to}`,
-      expectedVersion: current.version,
-    });
-  } catch {
-    // A forbidden/raced transition never blocks the already-persisted
-    // investigation/plan artifacts, which remain the authoritative record.
-  }
+  await db.transaction(async (tx) => {
+    await lockControlLoopCase(tx, ctx, input.caseId);
+    const actor = await authorizeTenantActorForUpdate(tx, ctx, input.actorId, ['investigator']);
+    const caseRows = await tx
+      .select()
+      .from(cases)
+      .where(and(eq(cases.tenantId, ctx.tenantId), eq(cases.id, input.caseId)))
+      .limit(1);
+    let caseRow = caseRows[0];
+    if (!caseRow) throw new InvestigationCaseNotFoundError();
+
+    const resultType = classifyInvestigationResult(investigation);
+    await tx
+      .insert(auditEntries)
+      .values({
+        id: stableEffectId('audit', investigation.id, 'investigation_persisted'),
+        tenantId: ctx.tenantId,
+        artifactType: 'INVESTIGATION',
+        artifactId: investigation.id,
+        artifactHash: investigation.evidenceSetHash,
+        actorId: actor.userId,
+        actorRole: 'investigator',
+        modelId: investigation.modelId,
+        promptVersion: investigation.promptVersion,
+        evidenceSetHash: investigation.evidenceSetHash,
+        details: {
+          result_type: resultType,
+          failure_class: investigation.failureClass,
+          gateway_mode: investigation.gatewayMode,
+        },
+      })
+      .onConflictDoNothing({ target: auditEntries.id });
+
+    const output = investigation.output as Record<string, unknown> | null;
+    const isFinding = output !== null && typeof output.finding_code === 'string';
+    if (isFinding) {
+      const finding = output as Finding;
+      const findingCode = finding.finding_code;
+      const templateId = FINDING_PLAN_TEMPLATE_MAP[findingCode];
+      const exposure = money(caseRow.exposureAmountMinor, caseRow.currency as 'INR');
+      const parameters: ToolParameters =
+        findingCode === 'MISSING_EXPECTED_TRANSFER'
+          ? {
+              tool_id: 'SIMULATE_TRANSFER_REMEDIATION',
+              economic_subject: caseRow.subjectId,
+              expectation_id: caseRow.expectationId,
+            }
+          : {
+              tool_id: 'SUPPRESS_SIMULATED_RECOVERY',
+              economic_subject: caseRow.subjectId,
+              recovery_id: null,
+            };
+      await proposePlanInTransaction(tx, ctx, {
+        caseId: input.caseId,
+        templateId,
+        parameters,
+        authorityLevel: findingCode === 'MISSING_EXPECTED_TRANSFER' ? 'L3' : 'L2',
+        maximumAmountImpact:
+          findingCode === 'MISSING_EXPECTED_TRANSFER'
+            ? exposure
+            : money(0n, caseRow.currency as 'INR'),
+      });
+    }
+
+    const terminalStates: ReadonlySet<string> = new Set([
+      'reconciled',
+      'escalated',
+      'rejected',
+      'expired',
+      'cancelled',
+      'closed_no_action',
+    ]);
+    if (terminalStates.has(caseRow.lifecycleState)) return;
+
+    const transition = async (toState: CaseLifecycleState, effect: string) => {
+      const nextVersion = await transitionCaseInTransaction(tx, ctx, {
+        caseId: input.caseId,
+        toState,
+        reason: `investigation:${effect}`,
+        expectedVersion: caseRow!.version,
+        actorId: actor.userId,
+        actorRole: 'investigator',
+        evidenceIds: [...((output?.supporting_evidence_ids as string[] | undefined) ?? [])],
+        transitionId: stableEffectId('trans', investigation.id, effect),
+        auditId: stableEffectId('audit', investigation.id, `transition_${effect}`),
+      });
+      caseRow = { ...caseRow!, lifecycleState: toState, version: nextVersion };
+    };
+
+    if (caseRow.lifecycleState === 'candidate') await transition('open', 'candidate_to_open');
+    if (caseRow.lifecycleState === 'open' || caseRow.lifecycleState === 'abstained') {
+      await transition('investigating', 'to_investigating');
+    }
+    if (isFinding) {
+      if (caseRow.lifecycleState === 'investigating') {
+        await transition('recommendation_ready', 'finding_ready');
+      }
+    } else if (caseRow.lifecycleState !== 'abstained') {
+      await transition('abstained', 'abstained');
+    }
+  });
 }

@@ -29,6 +29,26 @@ export function isDemoLikeEnvironment(environment: MoneyTraceEnvironment): boole
   return DEMO_LIKE_ENVIRONMENTS.has(environment);
 }
 
+export class RealAuthenticationRequiredError extends Error {
+  constructor() {
+    super('non-demo MoneyTrace environments require a real authentication provider');
+    this.name = 'RealAuthenticationRequiredError';
+  }
+}
+
+/**
+ * Demo-header identity must never become an accidental production auth
+ * mechanism. Test mode is allowed only under the test process environment.
+ */
+export function assertAuthenticationEnvironment(env: {
+  readonly MONEYTRACE_ENV: MoneyTraceEnvironment;
+  readonly NODE_ENV: 'development' | 'test' | 'production';
+}): void {
+  if (isDemoLikeEnvironment(env.MONEYTRACE_ENV)) return;
+  if (env.MONEYTRACE_ENV === 'test' && env.NODE_ENV === 'test') return;
+  throw new RealAuthenticationRequiredError();
+}
+
 /** Prefix that identifies a Razorpay LIVE (real-money) key. */
 export const RAZORPAY_LIVE_KEY_PREFIX = 'rzp_live_';
 
@@ -53,6 +73,11 @@ export class LiveKeyInDemoError extends Error {
 function isLiveKey(value: string | undefined): boolean {
   return typeof value === 'string' && value.startsWith(RAZORPAY_LIVE_KEY_PREFIX);
 }
+
+const OptionalNonEmptyString = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.string().min(1).optional(),
+);
 
 /**
  * Assert no Razorpay live key is configured in a demo-like environment.
@@ -89,15 +114,15 @@ export const EnvSchema = z
 
     DATABASE_URL: z.string().url().optional(),
 
-    RAZORPAY_KEY_ID: z.string().min(1).optional(),
-    RAZORPAY_KEY_SECRET: z.string().min(1).optional(),
-    RAZORPAY_WEBHOOK_SECRET: z.string().min(1).optional(),
+    RAZORPAY_KEY_ID: OptionalNonEmptyString,
+    RAZORPAY_KEY_SECRET: OptionalNonEmptyString,
+    RAZORPAY_WEBHOOK_SECRET: OptionalNonEmptyString,
 
-    SYNTHETIC_SOURCE_HMAC_SECRET: z.string().min(1).optional(),
+    SYNTHETIC_SOURCE_HMAC_SECRET: OptionalNonEmptyString,
 
     MODEL_PROVIDER: z.string().min(1).default('stub'),
     MODEL_API_URL: z.string().url().optional(),
-    MODEL_API_KEY: z.string().min(1).optional(),
+    MODEL_API_KEY: OptionalNonEmptyString,
   })
   .superRefine((env, ctx) => {
     try {
@@ -116,6 +141,38 @@ export const EnvSchema = z
   });
 
 export type Env = z.infer<typeof EnvSchema>;
+
+/**
+ * A well-known, clearly-fake placeholder (never a real secret) used to sign
+ * SYNTHETIC evidence in demo/test when no operator-supplied
+ * `SYNTHETIC_SOURCE_HMAC_SECRET` exists. It authenticates the internal
+ * synthetic-connector boundary against accidental cross-source injection, not
+ * against a real attacker — this is a prototype convenience, never a
+ * production credential, and is refused outside demo/buildathon/test.
+ */
+export const TEST_ONLY_SYNTHETIC_HMAC_SECRET = 'TEST_ONLY_synthetic_hmac_secret_do_not_use_in_prod';
+
+export class SyntheticHmacSecretRequiredError extends Error {
+  constructor() {
+    super('SYNTHETIC_SOURCE_HMAC_SECRET is required outside demo/buildathon/test environments');
+    this.name = 'SyntheticHmacSecretRequiredError';
+  }
+}
+
+/**
+ * Resolve the secret used to sign/verify synthetic connector evidence. Demo,
+ * buildathon, and test environments fall back to the fixed test-only
+ * placeholder when unset; every other environment requires an explicit value.
+ */
+export function resolveSyntheticHmacSecret(
+  env: Pick<Env, 'MONEYTRACE_ENV' | 'SYNTHETIC_SOURCE_HMAC_SECRET'>,
+): string {
+  if (env.SYNTHETIC_SOURCE_HMAC_SECRET) return env.SYNTHETIC_SOURCE_HMAC_SECRET;
+  if (isDemoLikeEnvironment(env.MONEYTRACE_ENV) || env.MONEYTRACE_ENV === 'test') {
+    return TEST_ONLY_SYNTHETIC_HMAC_SECRET;
+  }
+  throw new SyntheticHmacSecretRequiredError();
+}
 
 /**
  * Parse and validate an environment object (defaults to `process.env`).

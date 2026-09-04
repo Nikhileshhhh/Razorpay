@@ -128,6 +128,35 @@ describe('DemoInvestigationGateway (backend PRD §11.1 deterministic offline gat
     }
   });
 
+  it('CTRL-05 incompatible bank UTR/date evidence -> ABSTENTION/CONFLICTING_EVIDENCE', async () => {
+    const result = await gateway.investigate({
+      caseId: 'case_bank_conflict',
+      controlId: 'CTRL-05',
+      evidenceSetHash: `sha256:${'1'.repeat(64)}`,
+      promptVersion: 'v1',
+      pool: pool([
+        item({
+          evidenceId: 'evt_bank_a',
+          evidenceType: 'bank_credit',
+          entityReferences: { recipient_account_id: 'recipient_a' },
+          amountMinor: 45_500_000n,
+          data: { utr: 'UTR-CONFLICT-A', value_date: '2026-08-25' },
+        }),
+        item({
+          evidenceId: 'evt_bank_b',
+          evidenceType: 'bank_credit',
+          entityReferences: { recipient_account_id: 'recipient_b' },
+          amountMinor: 45_500_000n,
+          data: { utr: 'UTR-CONFLICT-B', value_date: '2026-08-27' },
+        }),
+      ]),
+    });
+    expect(result.output.result_type).toBe('ABSTENTION');
+    if (result.output.result_type === 'ABSTENTION') {
+      expect(result.output.abstention_reason).toBe('CONFLICTING_EVIDENCE');
+    }
+  });
+
   it('is deterministic BY EVIDENCE PATTERN, not by case id: two different case ids with the same evidence pattern get the same classification', async () => {
     const evidencePool = pool([
       item({ evidenceId: 'evt_captured', evidenceType: 'captured_payment' }),

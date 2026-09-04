@@ -5,6 +5,7 @@ import { createMigratedTestDatabase, type TestDatabase } from '../helpers/test-d
 import * as schema from '../../../src/config/db-schema.js';
 import { seedIdentity } from '../../../src/modules/demo/seed-identity.js';
 import { seedPolicyBundle } from '../../../src/modules/policy/policy-bundle.js';
+import { seedVerificationContracts } from '../../../src/modules/verification/verification-contracts-seed.js';
 import { createTenantContext } from '../../../src/modules/identity/tenant-context.js';
 import { ensureSellerAllocationExpectation } from '../../../src/modules/expectations/expectation-service.js';
 import { evaluateCtrl01MissingTransfer } from '../../../src/modules/invariants/ctrl-01-missing-transfer.js';
@@ -33,6 +34,7 @@ import {
 } from '../../../src/modules/approvals/decision-basis.js';
 import {
   reserveAction,
+  ActionBasisStaleError,
   ActionIdempotencyBodyConflictError,
 } from '../../../src/modules/actions/action-service.js';
 import { dispatchAction } from '../../../src/modules/actions/action-dispatch.js';
@@ -88,6 +90,7 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
     db = drizzle(pool, { schema });
     await seedIdentity(db);
     await seedPolicyBundle(db);
+    await seedVerificationContracts(db);
   });
 
   afterAll(async () => {
@@ -192,7 +195,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
       const requested = await requestInvestigation(db, ctx, {
         caseId,
         actorId: 'user_investigator',
-        actorRole: 'investigator',
       });
       expect(requested.requestId).toMatch(/^investigation_req_/);
 
@@ -200,7 +202,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
       const investigated = await runInvestigation(db, ctx, env, {
         caseId,
         actorId: 'user_investigator',
-        actorRole: 'investigator',
       });
       expect(investigated.resultType).toBe('FINDING');
 
@@ -221,7 +222,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
         planId: plan!.id,
         expectedPlanVersion: plan!.version,
         actorId: 'user_investigator',
-        actorRole: 'case_manager',
       });
       expect(policyResult.record.decision).toBe('REQUIRE_APPROVAL');
       expect(policyResult.plan.status).toBe('APPROVAL_REQUIRED');
@@ -238,16 +238,27 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
       expect(approval.state).toBe('REQUESTED');
 
       // 4. Self-approval is forbidden.
-      await expect(
-        decideApproval(db, ctx, {
-          caseId,
-          approvalId: approval.approval_id,
-          decisionBasisHash: approval.decision_basis_hash,
-          decision: 'approve',
-          approverId: 'user_investigator', // same as requester
-          approverRole: 'finance_approver',
-        }),
-      ).rejects.toThrow(ApprovalSelfApprovalError);
+      await db.insert(schema.memberships).values({
+        id: 'mem_user_investigator_finance_approver_self_test',
+        tenantId: 'ten_demo',
+        userId: 'user_investigator',
+        role: 'finance_approver',
+      });
+      try {
+        await expect(
+          decideApproval(db, ctx, {
+            caseId,
+            approvalId: approval.approval_id,
+            decisionBasisHash: approval.decision_basis_hash,
+            decision: 'approve',
+            approverId: 'user_investigator', // same as requester and currently authorized
+          }),
+        ).rejects.toThrow(ApprovalSelfApprovalError);
+      } finally {
+        await db.execute(
+          `delete from memberships where id = 'mem_user_investigator_finance_approver_self_test'`,
+        );
+      }
 
       // 5. Approve with a distinct approver.
       const approved = await decideApproval(db, ctx, {
@@ -256,7 +267,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
         decisionBasisHash: approval.decision_basis_hash,
         decision: 'approve',
         approverId: 'user_approver',
-        approverRole: 'finance_approver',
       });
       expect(approved.state).toBe('APPROVED');
       expect((await getCurrentPlan(db, ctx, caseId))?.status).toBe('AUTHORIZED');
@@ -276,15 +286,43 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
       );
       const freshHash = computeDecisionBasisHash(rebuilt!);
 
-      const action1 = await reserveAction(db, ctx, {
-        caseId,
-        planId: authorizedPlan!.id,
-        decisionBasisHash: freshHash,
-        actorId: 'user_operator',
-        actorRole: 'executor',
-      });
+      const [action1, initialRace] = await Promise.all([
+        reserveAction(db, ctx, {
+          caseId,
+          planId: authorizedPlan!.id,
+          decisionBasisHash: freshHash,
+          actorId: 'user_operator',
+        }),
+        reserveAction(db, ctx, {
+          caseId,
+          planId: authorizedPlan!.id,
+          decisionBasisHash: freshHash,
+          actorId: 'user_operator',
+        }),
+      ]);
       expect(action1.status).toBe('RESERVED');
+      expect(initialRace.action_id).toBe(action1.action_id);
       expect((await getCase(db, ctx, caseId))?.lifecycleState).toBe('executing');
+      const reservationAudits = await db.query.auditEntries.findMany({
+        where: (t, { eq: eqOp }) => eqOp(t.artifactId, action1.action_id),
+      });
+      const dispatchRows = await db.query.outbox.findMany({
+        where: (t, { eq: eqOp }) => eqOp(t.domainEventId, action1.action_id),
+      });
+      expect(reservationAudits).toHaveLength(1);
+      expect(dispatchRows).toHaveLength(1);
+      const lifecycle = await db.query.caseTransitions.findMany({
+        where: (t, { eq: eqOp }) => eqOp(t.caseId, caseId),
+        orderBy: (t, { asc: ascOp }) => [ascOp(t.occurredAt)],
+      });
+      expect(lifecycle.map((row) => row.toState)).toEqual([
+        'open',
+        'investigating',
+        'recommendation_ready',
+        'approval_required',
+        'approved',
+        'executing',
+      ]);
 
       // 7. Concurrent execute (double-submit) is idempotent: same action returned.
       const [a, b] = await Promise.all([
@@ -293,20 +331,28 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
           planId: authorizedPlan!.id,
           decisionBasisHash: freshHash,
           actorId: 'user_operator',
-          actorRole: 'executor',
         }),
         reserveAction(db, ctx, {
           caseId,
           planId: authorizedPlan!.id,
           decisionBasisHash: freshHash,
           actorId: 'user_operator',
-          actorRole: 'executor',
         }),
       ]);
       expect(a.action_id).toBe(action1.action_id);
       expect(b.action_id).toBe(action1.action_id);
 
-      // 8. Worker dispatches the action exactly once, even under redelivery.
+      // 8. A post-adapter crash leaves the stable action DISPATCHING; worker
+      // redelivery reuses that same action/effect reference and repairs the
+      // durable attempt without creating a second effect.
+      await expect(
+        dispatchAction(db, ctx, action1.action_id, { failAfterAdapterForTest: true }),
+      ).rejects.toThrow('simulated post-adapter crash');
+      const interrupted = await db.query.actions.findFirst({
+        where: (t, { eq: eqOp }) => eqOp(t.id, action1.action_id),
+      });
+      expect(interrupted?.status).toBe('DISPATCHING');
+      expect(interrupted?.attemptCount).toBe(0);
       await dispatchAction(db, ctx, action1.action_id);
       await dispatchAction(db, ctx, action1.action_id); // redelivery / crash retry
 
@@ -338,7 +384,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
       await runInvestigation(db, ctx, env, {
         caseId,
         actorId: 'user_investigator',
-        actorRole: 'investigator',
       });
       const plan = await getCurrentPlan(db, ctx, caseId);
       await evaluateCasePolicy(db, ctx, {
@@ -346,7 +391,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
         planId: plan!.id,
         expectedPlanVersion: plan!.version,
         actorId: 'user_investigator',
-        actorRole: 'case_manager',
       });
       const caseBefore = await getCase(db, ctx, caseId);
       const approval = await requestApproval(db, ctx, {
@@ -373,7 +417,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
           decisionBasisHash: approval.decision_basis_hash,
           decision: 'approve',
           approverId: 'user_approver',
-          approverRole: 'finance_approver',
         }),
       ).rejects.toThrow(ApprovalStaleError);
 
@@ -388,7 +431,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
       await runInvestigation(db, ctx, env, {
         caseId,
         actorId: 'user_investigator',
-        actorRole: 'investigator',
       });
       const plan = await getCurrentPlan(db, ctx, caseId);
       await evaluateCasePolicy(db, ctx, {
@@ -396,7 +438,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
         planId: plan!.id,
         expectedPlanVersion: plan!.version,
         actorId: 'user_investigator',
-        actorRole: 'case_manager',
       });
       const caseRow = await getCase(db, ctx, caseId);
       const approval = await requestApproval(db, ctx, {
@@ -414,15 +455,14 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
           decisionBasisHash: approval.decision_basis_hash,
           decision: 'approve',
           approverId: 'user_approver',
-          approverRole: 'finance_approver',
         }),
         decideApproval(db, ctx, {
           caseId,
           approvalId: approval.approval_id,
           decisionBasisHash: approval.decision_basis_hash,
           decision: 'reject',
+          reason: 'concurrent rejection',
           approverId: 'user_approver',
-          approverRole: 'finance_approver',
         }),
       ]);
       const fulfilled = results.filter((r) => r.status === 'fulfilled');
@@ -439,7 +479,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
       await runInvestigation(db, ctx, env, {
         caseId,
         actorId: 'user_investigator',
-        actorRole: 'investigator',
       });
       const plan = await getCurrentPlan(db, ctx, caseId);
       await evaluateCasePolicy(db, ctx, {
@@ -447,7 +486,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
         planId: plan!.id,
         expectedPlanVersion: plan!.version,
         actorId: 'user_investigator',
-        actorRole: 'case_manager',
       });
       const caseRow = await getCase(db, ctx, caseId);
       const approval = await requestApproval(db, ctx, {
@@ -463,7 +501,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
         decisionBasisHash: approval.decision_basis_hash,
         decision: 'approve',
         approverId: 'user_approver',
-        approverRole: 'finance_approver',
       });
       const authorizedPlan = await getCurrentPlan(db, ctx, caseId);
       const expiresAt = await resolveBasisExpiry(db, ctx, authorizedPlan!.id);
@@ -478,7 +515,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
         planId: authorizedPlan!.id,
         decisionBasisHash: computeDecisionBasisHash(rebuilt!),
         actorId: 'user_operator',
-        actorRole: 'executor',
       });
 
       await dispatchAction(db, ctx, action.action_id, { forcedOutcome: 'OUTCOME_UNKNOWN' });
@@ -507,7 +543,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
       const result = await runInvestigation(db, ctx, env, {
         caseId,
         actorId: 'user_investigator',
-        actorRole: 'investigator',
       });
       expect(result.resultType).toBe('FINDING');
       const plan = await getCurrentPlan(db, ctx, caseId);
@@ -518,11 +553,10 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
         planId: plan!.id,
         expectedPlanVersion: plan!.version,
         actorId: 'user_investigator',
-        actorRole: 'case_manager',
       });
       expect(policyResult.record.decision).toBe('ALLOW_AUTOMATIC');
       expect(policyResult.plan.status).toBe('AUTHORIZED');
-      expect((await getCase(db, ctx, caseId))?.lifecycleState).toBe('executing');
+      expect((await getCase(db, ctx, caseId))?.lifecycleState).toBe('recommendation_ready');
 
       const authorizedPlan = await getCurrentPlan(db, ctx, caseId);
       const expiresAt = await resolveBasisExpiry(db, ctx, authorizedPlan!.id);
@@ -537,7 +571,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
         planId: authorizedPlan!.id,
         decisionBasisHash: computeDecisionBasisHash(rebuilt!),
         actorId: 'user_operator',
-        actorRole: 'executor',
       });
       expect(action.status).toBe('RESERVED');
 
@@ -554,7 +587,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
       await runInvestigation(db, ctx, env, {
         caseId,
         actorId: 'user_investigator',
-        actorRole: 'investigator',
       });
       const plan = await getCurrentPlan(db, ctx, caseId);
       await evaluateCasePolicy(db, ctx, {
@@ -562,7 +594,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
         planId: plan!.id,
         expectedPlanVersion: plan!.version,
         actorId: 'user_investigator',
-        actorRole: 'case_manager',
       });
       const authorizedPlan = await getCurrentPlan(db, ctx, caseId);
       const expiresAt1 = await resolveBasisExpiry(db, ctx, authorizedPlan!.id);
@@ -578,7 +609,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
         planId: authorizedPlan!.id,
         decisionBasisHash: hash1,
         actorId: 'user_operator',
-        actorRole: 'executor',
       });
       expect(action1.status).toBe('RESERVED');
 
@@ -590,7 +620,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
         planId: rePlan!.id,
         expectedPlanVersion: rePlan!.version,
         actorId: 'user_investigator',
-        actorRole: 'case_manager',
       });
       const rePlan2 = await getCurrentPlan(db, ctx, caseId);
       const expiresAt2 = await resolveBasisExpiry(db, ctx, rePlan2!.id);
@@ -609,7 +638,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
           planId: rePlan2!.id,
           decisionBasisHash: hash2,
           actorId: 'user_operator',
-          actorRole: 'executor',
         }),
       ).rejects.toThrow(ActionIdempotencyBodyConflictError);
     });
@@ -649,11 +677,56 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
       const result = await runInvestigation(db, ctx, env, {
         caseId,
         actorId: 'user_investigator',
-        actorRole: 'investigator',
       });
       expect(result.resultType).toBe('ABSTENTION');
       expect(await getCurrentPlan(db, ctx, caseId)).toBeNull();
       expect((await getCase(db, ctx, caseId))?.lifecycleState).toBe('abstained');
+    });
+  });
+
+  describe('Investigation retry repair', () => {
+    it('repairs audit, plan, and lifecycle artifacts exactly once after an insert-time crash', async () => {
+      const caseId = await openMissingTransferCase('order:b3-repair:seller-12');
+      await expect(
+        runInvestigation(db, ctx, env, {
+          caseId,
+          actorId: 'user_investigator',
+          failAfterInsertForTest: true,
+        }),
+      ).rejects.toThrow('simulated post-investigation-insert crash');
+
+      const persisted = await db.query.investigations.findMany({
+        where: (t, { eq: eqOp }) => eqOp(t.caseId, caseId),
+      });
+      expect(persisted).toHaveLength(1);
+      expect(await getCurrentPlan(db, ctx, caseId)).toBeNull();
+      expect((await getCase(db, ctx, caseId))?.lifecycleState).toBe('open');
+
+      const repaired = await runInvestigation(db, ctx, env, {
+        caseId,
+        actorId: 'user_investigator',
+      });
+      expect(repaired.investigationId).toBe(persisted[0]!.id);
+      expect(await getCurrentPlan(db, ctx, caseId)).not.toBeNull();
+      expect((await getCase(db, ctx, caseId))?.lifecycleState).toBe('recommendation_ready');
+
+      await runInvestigation(db, ctx, env, { caseId, actorId: 'user_investigator' });
+      const plans = await db.query.plans.findMany({
+        where: (t, { eq: eqOp }) => eqOp(t.caseId, caseId),
+      });
+      const transitions = await db.query.caseTransitions.findMany({
+        where: (t, { eq: eqOp }) => eqOp(t.caseId, caseId),
+      });
+      const audits = await db.query.auditEntries.findMany({
+        where: (t, { eq: eqOp }) => eqOp(t.artifactId, persisted[0]!.id),
+      });
+      expect(plans).toHaveLength(1);
+      expect(transitions.map((row) => row.toState)).toEqual([
+        'open',
+        'investigating',
+        'recommendation_ready',
+      ]);
+      expect(audits).toHaveLength(1);
     });
   });
 
@@ -664,14 +737,12 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
         runInvestigation(db, otherCtx, env, {
           caseId,
           actorId: 'user_other_viewer',
-          actorRole: 'investigator',
         }),
       ).rejects.toThrow();
 
       await runInvestigation(db, ctx, env, {
         caseId,
         actorId: 'user_investigator',
-        actorRole: 'investigator',
       });
       const plan = await getCurrentPlan(db, ctx, caseId);
       expect(await getCurrentPlan(db, otherCtx, caseId)).toBeNull();
@@ -682,7 +753,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
           planId: plan!.id,
           expectedPlanVersion: plan!.version,
           actorId: 'user_other_viewer',
-          actorRole: 'case_manager',
         }),
       ).rejects.toThrow();
     });
@@ -692,7 +762,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
       await runInvestigation(db, ctx, env, {
         caseId,
         actorId: 'user_investigator',
-        actorRole: 'investigator',
       });
       const proposedPlan = await getCurrentPlan(db, ctx, caseId);
       await evaluateCasePolicy(db, ctx, {
@@ -700,7 +769,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
         planId: proposedPlan!.id,
         expectedPlanVersion: proposedPlan!.version,
         actorId: 'user_investigator',
-        actorRole: 'case_manager',
       });
       const plan = await getCurrentPlan(db, ctx, caseId); // re-fetch: evaluate-policy bumped plan.version
 
@@ -737,7 +805,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
           decisionBasisHash: approval.decision_basis_hash,
           decision: 'approve',
           approverId: 'user_other_viewer',
-          approverRole: 'finance_approver',
         }),
       ).rejects.toThrow();
 
@@ -747,7 +814,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
         decisionBasisHash: approval.decision_basis_hash,
         decision: 'approve',
         approverId: 'user_approver',
-        approverRole: 'finance_approver',
       });
       const authorizedPlan = await getCurrentPlan(db, ctx, caseId);
       const expiresAt = await resolveBasisExpiry(db, ctx, authorizedPlan!.id);
@@ -766,19 +832,91 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
           planId: authorizedPlan!.id,
           decisionBasisHash: hash,
           actorId: 'user_other_viewer',
-          actorRole: 'executor',
         }),
       ).rejects.toThrow();
     });
   });
 
   describe('Approval expiry and role loss', () => {
+    it('rejects a basis change that commits after reservation starts but before its case lock', async () => {
+      const caseId = await openMissingTransferCase('order:b3-interleaved-basis:seller-12');
+      await runInvestigation(db, ctx, env, { caseId, actorId: 'user_investigator' });
+      const proposedPlan = await getCurrentPlan(db, ctx, caseId);
+      await evaluateCasePolicy(db, ctx, {
+        caseId,
+        planId: proposedPlan!.id,
+        expectedPlanVersion: proposedPlan!.version,
+        actorId: 'user_investigator',
+      });
+      const plan = await getCurrentPlan(db, ctx, caseId);
+      const caseRow = await getCase(db, ctx, caseId);
+      const approval = await requestApproval(db, ctx, {
+        caseId,
+        planId: plan!.id,
+        expectedCaseVersion: caseRow!.version,
+        expectedPlanVersion: plan!.version,
+        requesterId: 'user_investigator',
+      });
+      await decideApproval(db, ctx, {
+        caseId,
+        approvalId: approval.approval_id,
+        decisionBasisHash: approval.decision_basis_hash,
+        decision: 'approve',
+        approverId: 'user_approver',
+      });
+      const expiresAt = await resolveBasisExpiry(db, ctx, plan!.id);
+      const basis = await rebuildDecisionBasis(db, ctx, { caseId, planId: plan!.id }, expiresAt);
+      const suppliedHash = computeDecisionBasisHash(basis!);
+      const dispatchBefore = await db.query.outbox.findMany({
+        where: (t, { and: andOp, eq: eqOp }) =>
+          andOp(eqOp(t.topic, 'dispatch-action.v1'), eqOp(t.tenantId, ctx.tenantId)),
+      });
+
+      const blocker = await pool.connect();
+      try {
+        await blocker.query('begin');
+        await blocker.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [
+          `${ctx.tenantId}|control-loop|${caseId}`,
+        ]);
+        await blocker.query(
+          'update cases set contradiction_count = contradiction_count + 1, version = version + 1 where tenant_id = $1 and id = $2',
+          [ctx.tenantId, caseId],
+        );
+
+        const reservation = reserveAction(db, ctx, {
+          caseId,
+          planId: plan!.id,
+          decisionBasisHash: suppliedHash,
+          actorId: 'user_operator',
+        });
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        await blocker.query('commit');
+
+        await expect(reservation).rejects.toBeInstanceOf(ActionBasisStaleError);
+      } finally {
+        try {
+          await blocker.query('rollback');
+        } finally {
+          blocker.release();
+        }
+      }
+
+      const actionRows = await db.query.actions.findMany({
+        where: (t, { eq: eqOp }) => eqOp(t.caseId, caseId),
+      });
+      const dispatchRows = await db.query.outbox.findMany({
+        where: (t, { and: andOp, eq: eqOp }) =>
+          andOp(eqOp(t.topic, 'dispatch-action.v1'), eqOp(t.tenantId, ctx.tenantId)),
+      });
+      expect(actionRows).toHaveLength(0);
+      expect(dispatchRows).toHaveLength(dispatchBefore.length);
+    });
+
     it('an expired REQUESTED approval can no longer be decided and lazily transitions to EXPIRED', async () => {
       const caseId = await openMissingTransferCase('order:b3-case-10:seller-10');
       await runInvestigation(db, ctx, env, {
         caseId,
         actorId: 'user_investigator',
-        actorRole: 'investigator',
       });
       const proposedPlan = await getCurrentPlan(db, ctx, caseId);
       await evaluateCasePolicy(db, ctx, {
@@ -786,7 +924,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
         planId: proposedPlan!.id,
         expectedPlanVersion: proposedPlan!.version,
         actorId: 'user_investigator',
-        actorRole: 'case_manager',
       });
       const plan = await getCurrentPlan(db, ctx, caseId); // re-fetch: evaluate-policy bumped plan.version
       const caseRow = await getCase(db, ctx, caseId);
@@ -810,7 +947,6 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
           decisionBasisHash: approval.decision_basis_hash,
           decision: 'approve',
           approverId: 'user_approver',
-          approverRole: 'finance_approver',
         }),
       ).rejects.toThrow();
 
@@ -818,6 +954,61 @@ describe('Gate B3 control loop (investigation -> policy -> approval -> action)',
         where: (t, { eq: eqOp }) => eqOp(t.id, approval.approval_id),
       });
       expect(row?.state).toBe('EXPIRED');
+    });
+
+    it('denies execution when the approving role is revoked after approval', async () => {
+      const caseId = await openMissingTransferCase('order:b3-role-loss:seller-11');
+      await runInvestigation(db, ctx, env, {
+        caseId,
+        actorId: 'user_investigator',
+      });
+      const proposedPlan = await getCurrentPlan(db, ctx, caseId);
+      await evaluateCasePolicy(db, ctx, {
+        caseId,
+        planId: proposedPlan!.id,
+        expectedPlanVersion: proposedPlan!.version,
+        actorId: 'user_investigator',
+      });
+      const plan = await getCurrentPlan(db, ctx, caseId);
+      const caseRow = await getCase(db, ctx, caseId);
+      const approval = await requestApproval(db, ctx, {
+        caseId,
+        planId: plan!.id,
+        expectedCaseVersion: caseRow!.version,
+        expectedPlanVersion: plan!.version,
+        requesterId: 'user_investigator',
+      });
+      await decideApproval(db, ctx, {
+        caseId,
+        approvalId: approval.approval_id,
+        decisionBasisHash: approval.decision_basis_hash,
+        decision: 'approve',
+        approverId: 'user_approver',
+      });
+      const expiresAt = await resolveBasisExpiry(db, ctx, plan!.id);
+      const basis = await rebuildDecisionBasis(db, ctx, { caseId, planId: plan!.id }, expiresAt);
+
+      await db.execute(
+        `delete from memberships where user_id = 'user_approver' and role = 'finance_approver'`,
+      );
+      try {
+        await expect(
+          reserveAction(db, ctx, {
+            caseId,
+            planId: plan!.id,
+            decisionBasisHash: computeDecisionBasisHash(basis!),
+            actorId: 'user_operator',
+          }),
+        ).rejects.toThrow();
+        const actions = await db.query.actions.findMany({
+          where: (t, { eq: eqOp }) => eqOp(t.caseId, caseId),
+        });
+        expect(actions).toHaveLength(0);
+      } finally {
+        await db.execute(
+          `insert into memberships (id, tenant_id, user_id, role) values ('mem_user_approver_finance_approver', 'ten_demo', 'user_approver', 'finance_approver') on conflict do nothing`,
+        );
+      }
     });
 
     it('revoking finance_approver mid-flight is enforced on the very next identity resolution (no caching/trust of a prior role check)', async () => {

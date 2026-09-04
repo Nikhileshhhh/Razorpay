@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { boundedArray, boundedString, LIMITS } from './common/limits.js';
-import { CaseId, OpaqueId, PlanId } from './common/identifiers.js';
+import { CaseId, ExpectationId, OpaqueId, PlanId } from './common/identifiers.js';
 import { Money } from './common/money.js';
 import { CustomerImpact, Role, RuntimeEnvironment } from './common/roles.js';
 import { Rfc3339Utc } from './common/timestamps.js';
@@ -32,6 +32,27 @@ export const PolicyDecision = z.enum([
 export type PolicyDecision = z.infer<typeof PolicyDecision>;
 
 /**
+ * Persisted reconciliation projection (ADR 0002 D5). Supplied ONLY by the
+ * reconciliation service from real persisted allocation/closure/reversal rows so
+ * the deterministic policy engine can authorize an automatic receivable closure.
+ * It is explicitly `null` for every other action and for the generic
+ * `evaluate-policy` endpoint (which therefore continues to DENY CLOSE). This is a
+ * typed fact set, not a lone authorization boolean.
+ */
+export const ReconciliationState = z
+  .object({
+    allocation_id: OpaqueId,
+    expectation_id: ExpectationId,
+    // Only an ALLOCATED (never reversed) allocation is closure-eligible.
+    status: z.enum(['ALLOCATED']),
+    closure_status: z.enum(['NONE', 'CLOSED']),
+    reversal_status: z.enum(['NONE', 'REVERSED']),
+    resource_version: ResourceVersion,
+  })
+  .strict();
+export type ReconciliationState = z.infer<typeof ReconciliationState>;
+
+/**
  * The EXACT, typed set of policy inputs (handoff §13). Every documented input is
  * a REQUIRED key. Where a value is genuinely not applicable it may be explicitly
  * `null`, but OMITTING a key rejects so a safety input can never silently vanish.
@@ -57,6 +78,8 @@ export const PolicyInputProjection = z
     outcome_version: ResourceVersion,
     approval_status: ApprovalState.nullable(),
     policy_bundle_version: ContractVersion,
+    // Required key; `null` for every action except a reconciliation-gated CLOSE.
+    reconciliation_state: ReconciliationState.nullable(),
   })
   .strict();
 export type PolicyInputProjection = z.infer<typeof PolicyInputProjection>;

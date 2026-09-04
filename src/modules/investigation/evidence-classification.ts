@@ -12,7 +12,9 @@ import { sealEvidenceSet, type SealedEvidenceSet } from '../evidence/evidence-se
  * DUPLICATE_RECOVERY_RISK finding are mapped; everything else is `null` and
  * excluded from the sealed set (never guessed).
  */
-const EVENT_TYPE_TO_EVIDENCE_TYPE: Partial<Record<CanonicalEventType, EvidenceType>> = {
+export const EVENT_TYPE_TO_EVIDENCE_TYPE: Readonly<
+  Partial<Record<CanonicalEventType, EvidenceType>>
+> = {
   OrderPaid: 'paid_order',
   PaymentCaptured: 'captured_payment',
   RefundCreated: 'refund',
@@ -25,10 +27,15 @@ const EVENT_TYPE_TO_EVIDENCE_TYPE: Partial<Record<CanonicalEventType, EvidenceTy
   SettlementObserved: 'recipient_settlement',
   BankCreditObserved: 'bank_credit',
   SellerReceivableOpened: 'seller_receivable',
-  SellerReceivableClosed: 'seller_receivable',
+  SellerReceivableClosed: 'seller_receivable_closed',
   RecoveryScheduled: 'recovery_action',
   RecoverySuppressed: 'recovery_action',
 };
+
+export function evidenceTypeForCanonicalEvent(eventType: string | null): EvidenceType | null {
+  if (!eventType) return null;
+  return EVENT_TYPE_TO_EVIDENCE_TYPE[eventType as CanonicalEventType] ?? null;
+}
 
 export interface ClassifiedEvidenceItem {
   readonly evidenceId: string;
@@ -36,6 +43,8 @@ export interface ClassifiedEvidenceItem {
   readonly entityReferences: Record<string, unknown>;
   readonly eventTime: Date;
   readonly amountMinor: bigint | null;
+  /** Strict canonical event data retained for typed UTR/value-date comparisons. */
+  readonly data?: Readonly<Record<string, unknown>>;
 }
 
 export interface CaseEvidencePool {
@@ -82,6 +91,7 @@ export async function collectCaseEvidencePool(
       entityReferences: ingestEvents.entityReferences,
       eventTime: ingestEvents.eventTime,
       amountMinor: ingestEvents.amountMinor,
+      rawPayload: ingestEvents.rawPayload,
     })
     .from(ingestEvents)
     .where(
@@ -104,6 +114,16 @@ export async function collectCaseEvidencePool(
       entityReferences: (evidenceRow.entityReferences ?? {}) as Record<string, unknown>,
       eventTime: evidenceRow.eventTime,
       amountMinor: evidenceRow.amountMinor,
+      data:
+        evidenceRow.rawPayload &&
+        typeof evidenceRow.rawPayload === 'object' &&
+        !Array.isArray(evidenceRow.rawPayload) &&
+        'data' in evidenceRow.rawPayload &&
+        evidenceRow.rawPayload.data &&
+        typeof evidenceRow.rawPayload.data === 'object' &&
+        !Array.isArray(evidenceRow.rawPayload.data)
+          ? (evidenceRow.rawPayload.data as Record<string, unknown>)
+          : {},
     });
   }
 

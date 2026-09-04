@@ -1,15 +1,21 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import type { Database } from '../../config/db.js';
+import type { Database, DatabaseTransaction, DbExecutor } from '../../config/db.js';
 import { plans as plansTable } from '../../config/db-schema.js';
 import { contentHash } from '../../config/hashing.js';
 import type { TenantContext } from '../identity/tenant-context.js';
-import type { AuthorityLevel, PlanStatus, ToolParameters } from '../../contracts/plans.js';
+import type {
+  AuthorityLevel,
+  PlanStatus,
+  PlanTemplateId,
+  ToolParameters,
+} from '../../contracts/plans.js';
 import type { Money } from '../../domain/money/money.js';
+import { lockControlLoopCase } from '../cases/case-service.js';
 
 export interface ProposePlanInput {
   readonly caseId: string;
-  readonly templateId: 'OPEN_TRANSFER_REMEDIATION_WITH_APPROVAL' | 'SUPPRESS_DUPLICATE_RECOVERY';
+  readonly templateId: PlanTemplateId;
   readonly parameters: ToolParameters;
   readonly authorityLevel: AuthorityLevel;
   readonly maximumAmountImpact: Money;
@@ -43,6 +49,18 @@ export async function proposePlan(
   ctx: TenantContext,
   input: ProposePlanInput,
 ): Promise<PlanRow> {
+  return db.transaction(async (tx) => {
+    await lockControlLoopCase(tx, ctx, input.caseId);
+    return proposePlanInTransaction(tx, ctx, input);
+  });
+}
+
+/** Idempotent plan proposal that joins an existing case-scoped transaction. */
+export async function proposePlanInTransaction(
+  tx: DatabaseTransaction,
+  ctx: TenantContext,
+  input: ProposePlanInput,
+): Promise<PlanRow> {
   const planHash = contentHash({
     templateId: input.templateId,
     parameters: input.parameters,
@@ -51,62 +69,60 @@ export async function proposePlan(
     currency: input.maximumAmountImpact.currency,
   });
 
-  return db.transaction(async (tx) => {
-    const demoteCurrent = () =>
-      tx
+  const demoteCurrent = () =>
+    tx
+      .update(plansTable)
+      .set({ isCurrent: false })
+      .where(
+        and(
+          eq(plansTable.tenantId, ctx.tenantId),
+          eq(plansTable.caseId, input.caseId),
+          eq(plansTable.isCurrent, true),
+        ),
+      );
+
+  const existing = await tx
+    .select()
+    .from(plansTable)
+    .where(and(eq(plansTable.tenantId, ctx.tenantId), eq(plansTable.planHash, planHash)))
+    .limit(1);
+  if (existing[0]) {
+    if (!existing[0].isCurrent) {
+      await demoteCurrent();
+      await tx
         .update(plansTable)
-        .set({ isCurrent: false })
-        .where(
-          and(
-            eq(plansTable.tenantId, ctx.tenantId),
-            eq(plansTable.caseId, input.caseId),
-            eq(plansTable.isCurrent, true),
-          ),
-        );
-
-    const existing = await tx
-      .select()
-      .from(plansTable)
-      .where(and(eq(plansTable.tenantId, ctx.tenantId), eq(plansTable.planHash, planHash)))
-      .limit(1);
-    if (existing[0]) {
-      if (!existing[0].isCurrent) {
-        await demoteCurrent();
-        await tx
-          .update(plansTable)
-          .set({ isCurrent: true })
-          .where(and(eq(plansTable.tenantId, ctx.tenantId), eq(plansTable.id, existing[0].id)));
-      }
-      return toPlanRow({ ...existing[0], isCurrent: true });
+        .set({ isCurrent: true })
+        .where(and(eq(plansTable.tenantId, ctx.tenantId), eq(plansTable.id, existing[0].id)));
     }
+    return toPlanRow({ ...existing[0], isCurrent: true });
+  }
 
-    await demoteCurrent();
-    const id = `plan_${randomUUID()}`;
-    await tx.insert(plansTable).values({
-      id,
-      tenantId: ctx.tenantId,
-      caseId: input.caseId,
-      templateId: input.templateId,
-      version: 1,
-      parameters: input.parameters,
-      planHash,
-      authorityLevel: input.authorityLevel,
-      maximumAmountImpactMinor: input.maximumAmountImpact.amountMinor,
-      currency: input.maximumAmountImpact.currency,
-      status: 'PROPOSED',
-      isCurrent: true,
-    });
-    const inserted = await tx
-      .select()
-      .from(plansTable)
-      .where(and(eq(plansTable.tenantId, ctx.tenantId), eq(plansTable.id, id)))
-      .limit(1);
-    return toPlanRow(inserted[0]!);
+  await demoteCurrent();
+  const id = `plan_${randomUUID()}`;
+  await tx.insert(plansTable).values({
+    id,
+    tenantId: ctx.tenantId,
+    caseId: input.caseId,
+    templateId: input.templateId,
+    version: 1,
+    parameters: input.parameters,
+    planHash,
+    authorityLevel: input.authorityLevel,
+    maximumAmountImpactMinor: input.maximumAmountImpact.amountMinor,
+    currency: input.maximumAmountImpact.currency,
+    status: 'PROPOSED',
+    isCurrent: true,
   });
+  const inserted = await tx
+    .select()
+    .from(plansTable)
+    .where(and(eq(plansTable.tenantId, ctx.tenantId), eq(plansTable.id, id)))
+    .limit(1);
+  return toPlanRow(inserted[0]!);
 }
 
 export async function getCurrentPlan(
-  db: Database,
+  db: DbExecutor,
   ctx: TenantContext,
   caseId: string,
 ): Promise<PlanRow | null> {
@@ -125,7 +141,7 @@ export async function getCurrentPlan(
 }
 
 export async function getPlanById(
-  db: Database,
+  db: DbExecutor,
   ctx: TenantContext,
   planId: string,
 ): Promise<PlanRow | null> {
@@ -181,7 +197,7 @@ export async function setPlanStatus(
   return nextVersion;
 }
 
-function toPlanRow(row: typeof plansTable.$inferSelect): PlanRow {
+export function toPlanRow(row: typeof plansTable.$inferSelect): PlanRow {
   return {
     id: row.id,
     tenantId: row.tenantId,

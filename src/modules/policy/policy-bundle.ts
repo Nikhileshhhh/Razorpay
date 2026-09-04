@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import type { Database } from '../../config/db.js';
+import type { Database, DbExecutor } from '../../config/db.js';
 import { policyBundles } from '../../config/db-schema.js';
 import { contentHash } from '../../config/hashing.js';
 
@@ -41,9 +41,10 @@ export const POLICY_BUNDLE_RULES = [
     decision: 'ADVISE',
   },
   {
-    rule: 'RECONCILIATION_CLOSURE_NOT_YET_AVAILABLE',
-    when: 'action_type = CLOSE_SYNTHETIC_RECEIVABLE_AFTER_RECONCILIATION (Gate B4 scope)',
-    decision: 'DENY',
+    rule: 'RECEIVABLE_CLOSURE_AFTER_UNIQUE_RECONCILIATION',
+    when: 'worker + L3 + zero INR + allocated reconciliation with no closure or reversal',
+    decision: 'ALLOW_AUTOMATIC',
+    requiredRole: 'worker',
   },
   { rule: 'CURRENCY_MISMATCH', when: 'amount_impact.currency != INR', decision: 'DENY' },
   {
@@ -75,7 +76,7 @@ export async function seedPolicyBundle(db: Pick<Database, 'insert'>): Promise<vo
     .onConflictDoNothing({ target: policyBundles.version });
 }
 
-export async function ensurePolicyBundleExists(db: Database): Promise<void> {
+export async function ensurePolicyBundleExists(db: DbExecutor): Promise<void> {
   const existing = await db
     .select({ version: policyBundles.version })
     .from(policyBundles)

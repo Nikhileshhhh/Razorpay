@@ -4,7 +4,13 @@ import type { Database } from '../config/db.js';
 import { outbox } from '../config/db-schema.js';
 
 export const B2_JOB_TOPICS = ['project-evidence.v1', 'evaluate-controls.v1'] as const;
-const ACTION_TOPIC = 'dispatch-action.v1';
+const EFFECT_CAPABLE_TOPICS: ReadonlySet<string> = new Set([
+  'dispatch-action.v1',
+  'reconcile-expectation.v1',
+  'advance-demo-scenario.v1',
+  'complete-duplicate-recovery-prevention.v1',
+  'process-import.v1',
+]);
 
 export class ReplayTopicForbiddenError extends Error {
   constructor() {
@@ -14,7 +20,7 @@ export class ReplayTopicForbiddenError extends Error {
 }
 
 export function assertReplayTopicAllowed(topic: string, replay: boolean): void {
-  if (replay && topic === ACTION_TOPIC) throw new ReplayTopicForbiddenError();
+  if (replay && EFFECT_CAPABLE_TOPICS.has(topic)) throw new ReplayTopicForbiddenError();
 }
 
 interface ClaimedOutboxRow extends Record<string, unknown> {

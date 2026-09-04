@@ -1,7 +1,12 @@
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { analyzeTree, collectSourceFiles, layerOfPath } from '../support/boundaries.js';
+import {
+  analyzeTree,
+  collectSourceFiles,
+  layerOfPath,
+  reachableFiles,
+} from '../support/boundaries.js';
 
 /**
  * Authoritative import-boundary enforcement (architecture handoff §16).
@@ -40,5 +45,28 @@ describe('architecture import boundaries', () => {
     expect(layerOfPath(join(srcRoot, 'integrations', 'razorpay', 'x.ts'), repoRoot)).toBe(
       'integrations',
     );
+  });
+
+  it('proves the API process entry point never transitively imports adapter dispatch', () => {
+    // Only the worker may invoke adapter dispatch (backend PRD §12.4/§18:
+    // "only the worker owns adapter capability"). This is a stronger,
+    // whole-graph check than the per-directory layer rules above — it BFS's
+    // the REAL, statically-resolvable import graph from the API's own entry
+    // point file and proves the adapter dispatch module and the adapter
+    // registry it wraps are not anywhere in that reachable set, not merely
+    // "not imported by files one hop away".
+    const apiEntry = join(srcRoot, 'api', 'server.ts');
+    const reachable = reachableFiles(apiEntry);
+    const forbidden = [
+      join(srcRoot, 'modules', 'actions', 'action-dispatch.ts'),
+      join(srcRoot, 'modules', 'actions', 'adapter-registry.ts'),
+    ];
+    for (const file of forbidden) {
+      expect(
+        reachable.has(resolve(file)),
+        `API entry point ${apiEntry} must never reach ${file}, but it is in the ` +
+          `transitively-reachable import graph (${reachable.size} files reachable)`,
+      ).toBe(false);
+    }
   });
 });

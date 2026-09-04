@@ -88,11 +88,34 @@ export function evaluatePolicy(input: PolicyInputProjection): PolicyEvaluationRe
         reasonCodes: ['INFORMATIONAL_TOOL'],
         requiredRole: null,
       };
-    case 'CLOSE_SYNTHETIC_RECEIVABLE_AFTER_RECONCILIATION':
-      // Registered as a tool (policy/action allowlist), but its dispatch is
-      // Gate B4's reconciliation-triggered closure. Default-deny rather than
-      // fake availability B3 does not yet provide.
-      return deny(['RECONCILIATION_CLOSURE_NOT_YET_AVAILABLE']);
+    case 'CLOSE_SYNTHETIC_RECEIVABLE_AFTER_RECONCILIATION': {
+      // Gate B4 (ADR 0002 D5): closure is permitted ONLY when a persisted
+      // reconciliation projection proves a still-valid unique allocation with no
+      // closure and no reversal. The generic evaluate-policy endpoint always
+      // passes `reconciliation_state = null`, so CLOSE stays denied there; only
+      // the reconciliation service supplies a real projection. Policy is one of
+      // several layers — reservation independently re-locks and revalidates the
+      // exact allocation/reversal/closure state before any effect.
+      const rec = input.reconciliation_state;
+      if (
+        input.actor_role === 'worker' &&
+        input.authority_level === 'L3' &&
+        input.amount_impact?.currency === 'INR' &&
+        input.amount_impact.amount_minor === '0' &&
+        rec !== null &&
+        rec.status === 'ALLOCATED' &&
+        rec.closure_status === 'NONE' &&
+        rec.reversal_status === 'NONE'
+      ) {
+        return {
+          decision: 'ALLOW_AUTOMATIC',
+          matchedRules: ['RECEIVABLE_CLOSURE_AFTER_UNIQUE_RECONCILIATION'],
+          reasonCodes: ['RECEIVABLE_CLOSURE_AFTER_UNIQUE_RECONCILIATION'],
+          requiredRole: 'worker',
+        };
+      }
+      return deny(['RECONCILIATION_CLOSURE_NOT_AUTHORIZED']);
+    }
     default:
       // Unreachable given ToolActionId's exhaustive enum; kept as the
       // structural default-deny fallback the PRD requires.

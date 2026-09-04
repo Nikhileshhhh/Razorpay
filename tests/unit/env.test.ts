@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertNoLiveKeyInDemo,
+  assertAuthenticationEnvironment,
   isDemoLikeEnvironment,
   LiveKeyInDemoError,
   loadEnv,
@@ -17,6 +18,23 @@ const BASE_ENV = {
 } satisfies NodeJS.ProcessEnv;
 
 describe('environment validation', () => {
+  it('treats blank optional secrets from .env.example as unset', () => {
+    const env = loadEnv({
+      ...BASE_ENV,
+      RAZORPAY_KEY_ID: '',
+      RAZORPAY_KEY_SECRET: '',
+      RAZORPAY_WEBHOOK_SECRET: '',
+      SYNTHETIC_SOURCE_HMAC_SECRET: '',
+      MODEL_API_KEY: '',
+    });
+
+    expect(env.RAZORPAY_KEY_ID).toBeUndefined();
+    expect(env.RAZORPAY_KEY_SECRET).toBeUndefined();
+    expect(env.RAZORPAY_WEBHOOK_SECRET).toBeUndefined();
+    expect(env.SYNTHETIC_SOURCE_HMAC_SECRET).toBeUndefined();
+    expect(env.MODEL_API_KEY).toBeUndefined();
+  });
+
   it('parses a valid demo environment with defaults', () => {
     const env = loadEnv(BASE_ENV);
     expect(env.MONEYTRACE_ENV).toBe('demo');
@@ -44,6 +62,29 @@ describe('environment validation', () => {
     });
     expect(env.RAZORPAY_KEY_ID).toBe('rzp_test_FAKE_TEST_ONLY');
   });
+});
+
+describe('authentication environment guard', () => {
+  it.each(['demo', 'buildathon'] as const)('allows demo-header auth in %s', (environment) => {
+    expect(() =>
+      assertAuthenticationEnvironment({ MONEYTRACE_ENV: environment, NODE_ENV: 'production' }),
+    ).not.toThrow();
+  });
+
+  it('allows the isolated test runtime', () => {
+    expect(() =>
+      assertAuthenticationEnvironment({ MONEYTRACE_ENV: 'test', NODE_ENV: 'test' }),
+    ).not.toThrow();
+  });
+
+  it.each(['development', 'production'] as const)(
+    'fails closed in %s while no real auth provider exists',
+    (environment) => {
+      expect(() =>
+        assertAuthenticationEnvironment({ MONEYTRACE_ENV: environment, NODE_ENV: 'production' }),
+      ).toThrow(/authentication provider/i);
+    },
+  );
 });
 
 describe('isDemoLikeEnvironment', () => {

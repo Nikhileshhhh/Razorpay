@@ -21,6 +21,7 @@ import {
   ApprovalSelfApprovalError,
   ApprovalStateConflictError,
   InvalidApprovalCursorError,
+  getApprovalResourceVersion,
 } from '../../modules/approvals/approval-service.js';
 import { problem } from './problem.js';
 
@@ -42,11 +43,16 @@ export function registerApprovalRoutes(app: FastifyInstance, db: Database): void
         reason: body.data.reason,
         requesterId: req.identity!.userId,
       });
+      const resourceVersion = await getApprovalResourceVersion(
+        db,
+        req.identity!.tenantContext,
+        record.approval_id,
+      );
       return reply.code(200).send(
         ApprovalResponse.parse({
           schema_version: '1.0',
           request_id: req.id,
-          resource_version: 0,
+          resource_version: resourceVersion,
           data: record,
         }),
       );
@@ -71,13 +77,17 @@ export function registerApprovalRoutes(app: FastifyInstance, db: Database): void
         decision: 'approve',
         reason: body.data.reason,
         approverId: req.identity!.userId,
-        approverRole: 'finance_approver',
       });
+      const resourceVersion = await getApprovalResourceVersion(
+        db,
+        req.identity!.tenantContext,
+        record.approval_id,
+      );
       return reply.code(200).send(
         ApprovalResponse.parse({
           schema_version: '1.0',
           request_id: req.id,
-          resource_version: 1,
+          resource_version: resourceVersion,
           data: record,
         }),
       );
@@ -102,13 +112,17 @@ export function registerApprovalRoutes(app: FastifyInstance, db: Database): void
         decision: 'reject',
         reason: body.data.reason,
         approverId: req.identity!.userId,
-        approverRole: 'finance_approver',
       });
+      const resourceVersion = await getApprovalResourceVersion(
+        db,
+        req.identity!.tenantContext,
+        record.approval_id,
+      );
       return reply.code(200).send(
         ApprovalResponse.parse({
           schema_version: '1.0',
           request_id: req.id,
-          resource_version: 1,
+          resource_version: resourceVersion,
           data: record,
         }),
       );
@@ -135,13 +149,17 @@ export function registerApprovalRoutes(app: FastifyInstance, db: Database): void
         decision: 'request_more_evidence',
         reason: body.data.reason,
         approverId: req.identity!.userId,
-        approverRole: 'finance_approver',
       });
+      const resourceVersion = await getApprovalResourceVersion(
+        db,
+        req.identity!.tenantContext,
+        record.approval_id,
+      );
       return reply.code(200).send(
         ApprovalResponse.parse({
           schema_version: '1.0',
           request_id: req.id,
-          resource_version: 1,
+          resource_version: resourceVersion,
           data: record,
         }),
       );

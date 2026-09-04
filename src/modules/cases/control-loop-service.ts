@@ -13,6 +13,7 @@ import {
   rebuildDecisionBasis,
   resolveBasisExpiry,
 } from '../approvals/decision-basis.js';
+import { getCaseVerificationView } from '../verification/verification-service.js';
 
 function planRowToContract(plan: PlanRow): Plan {
   return {
@@ -50,6 +51,7 @@ export async function buildControlLoopView(
   const policyDecision = plan ? await getLatestPolicyDecision(db, ctx, caseId) : null;
   const approval = plan ? await getCurrentApprovalForPlan(db, ctx, plan.id) : null;
   const action = await getCurrentActionForCase(db, ctx, caseId);
+  const verificationView = await getCaseVerificationView(db, ctx, caseId);
 
   let currentDecisionBasisHash: string | null = null;
   if (plan && policyDecision) {
@@ -73,6 +75,8 @@ export async function buildControlLoopView(
     } else if (plan?.status === 'AUTHORIZED' && currentDecisionBasisHash) {
       allowedNextCommands.push('execute');
     }
+  } else if (action.status === 'VERIFICATION_PENDING') {
+    allowedNextCommands.push('check_status');
   }
 
   return {
@@ -85,6 +89,29 @@ export async function buildControlLoopView(
     current_decision_basis_hash: currentDecisionBasisHash,
     approval,
     action,
+    verification: verificationView.result,
+    reconciliation: verificationView.reversal
+      ? {
+          status: 'REVERSED',
+          allocation: verificationView.allocation,
+          closure: verificationView.closure,
+          reversal: verificationView.reversal,
+        }
+      : verificationView.closure
+        ? {
+            status: 'CLOSED',
+            allocation: verificationView.allocation,
+            closure: verificationView.closure,
+            reversal: null,
+          }
+        : verificationView.allocation
+          ? {
+              status: 'ALLOCATED',
+              allocation: verificationView.allocation,
+              closure: null,
+              reversal: null,
+            }
+          : { status: 'NONE', allocation: null, closure: null, reversal: null },
     allowed_next_commands: allowedNextCommands,
   };
 }

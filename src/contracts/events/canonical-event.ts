@@ -17,7 +17,12 @@ import {
   type SourceSystem,
 } from './event-types.js';
 import { CANONICAL_EVENT_CLASSIFICATIONS } from './classification.js';
-import { BankCreditObservedData, EmptyData, SettlementScopedData } from './payloads.js';
+import {
+  BankCreditObservedData,
+  EmptyData,
+  SettlementObservedData,
+  SettlementScopedData,
+} from './payloads.js';
 
 /**
  * Canonical event envelope (architecture §8.1).
@@ -75,15 +80,17 @@ const commonFields = {
 };
 
 type EventDataSchema =
-  typeof BankCreditObservedData | typeof SettlementScopedData | typeof EmptyData;
+  | typeof BankCreditObservedData
+  | typeof SettlementScopedData
+  | typeof SettlementObservedData
+  | typeof EmptyData;
 
 function dataForEvent(eventType: CanonicalEventType): EventDataSchema {
   if (eventType === 'BankCreditObserved') return BankCreditObservedData;
-  if (
-    eventType === 'SettlementCreated' ||
-    eventType === 'SettlementProcessed' ||
-    eventType === 'SettlementObserved'
-  ) {
+  // A terminal SettlementObserved may carry optional utr/value_date (ADR 0002
+  // D7); SettlementCreated/Processed remain scope-only and never bank proof.
+  if (eventType === 'SettlementObserved') return SettlementObservedData;
+  if (eventType === 'SettlementCreated' || eventType === 'SettlementProcessed') {
     return SettlementScopedData;
   }
   return EmptyData;

@@ -31,6 +31,7 @@
     "eslint.config.js",
     "vite.config.ts",
     "vitest.config.ts",
+    "vitest.e2e-backend.config.ts",
     "playwright.config.ts",
     "drizzle.config.ts"
   ],

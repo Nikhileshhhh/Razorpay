@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, gt, lt, or, type SQL } from 'drizzle-orm';
-import type { Database } from '../../config/db.js';
+import { and, asc, desc, eq, gt, lt, or, sql, type SQL } from 'drizzle-orm';
+import type { Database, DbExecutor } from '../../config/db.js';
 import {
   approvals as approvalsTable,
   auditEntries,
@@ -19,10 +19,10 @@ import {
   APPROVAL_TTL_MS,
 } from './decision-basis.js';
 import { assertApprovalTransition } from '../../domain/state-machines/approval.js';
-import {
-  assertCaseLifecycleTransition,
-  type CaseLifecycleState,
-} from '../../domain/state-machines/case-lifecycle.js';
+import { lockControlLoopCase, transitionCaseInTransaction } from '../cases/case-service.js';
+import { authorizeTenantActorForUpdate } from '../identity/identity-repository.js';
+import { assertHasAnyRole, type Role } from '../identity/roles.js';
+import { isUniqueViolation } from '../../config/errors.js';
 
 export class ApprovalNotFoundError extends Error {
   constructor() {
@@ -69,114 +69,116 @@ export async function requestApproval(
   ctx: TenantContext,
   input: RequestApprovalInput,
 ): Promise<ApprovalRecord> {
-  const expiresAt = new Date(Date.now() + APPROVAL_TTL_MS).toISOString();
-  const basis = await rebuildDecisionBasis(
-    db,
-    ctx,
-    { caseId: input.caseId, planId: input.planId },
-    expiresAt,
-  );
-  if (!basis) throw new ApprovalPreconditionError('plan/policy/investigation state is incomplete');
-  if (
-    basis.case_version !== input.expectedCaseVersion ||
-    basis.plan_version !== input.expectedPlanVersion
-  ) {
-    throw new ApprovalStaleError();
-  }
+  let basisHash: string | null = null;
+  try {
+    return await db.transaction(async (tx) => {
+      await lockControlLoopCase(tx, ctx, input.caseId);
+      const requester = await authorizeTenantActorForUpdate(tx, ctx, input.requesterId, [
+        'case_manager',
+      ]);
+      const expiresAt = new Date(Date.now() + APPROVAL_TTL_MS).toISOString();
+      const basis = await rebuildDecisionBasis(
+        tx,
+        ctx,
+        { caseId: input.caseId, planId: input.planId },
+        expiresAt,
+      );
+      if (!basis) {
+        throw new ApprovalPreconditionError('plan/policy/investigation state is incomplete');
+      }
+      if (
+        basis.case_version !== input.expectedCaseVersion ||
+        basis.plan_version !== input.expectedPlanVersion
+      ) {
+        throw new ApprovalStaleError();
+      }
+      const planRows = await tx
+        .select({ status: plansTable.status })
+        .from(plansTable)
+        .where(and(eq(plansTable.tenantId, ctx.tenantId), eq(plansTable.id, input.planId)))
+        .limit(1);
+      if (planRows[0]?.status !== 'APPROVAL_REQUIRED') {
+        throw new ApprovalPreconditionError('plan is not in APPROVAL_REQUIRED status');
+      }
+      const hash = computeDecisionBasisHash(basis);
+      basisHash = hash;
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`${ctx.tenantId}|approval|${hash}`}, 0))`,
+      );
+      const existing = await tx
+        .select()
+        .from(approvalsTable)
+        .where(
+          and(
+            eq(approvalsTable.tenantId, ctx.tenantId),
+            eq(approvalsTable.decisionBasisHash, hash),
+            eq(approvalsTable.state, 'REQUESTED'),
+          ),
+        )
+        .limit(1);
+      if (existing[0]) return toApprovalRecord(existing[0]);
 
-  const planRows = await db
-    .select({ status: plansTable.status })
-    .from(plansTable)
-    .where(and(eq(plansTable.tenantId, ctx.tenantId), eq(plansTable.id, input.planId)))
-    .limit(1);
-  if (planRows[0]?.status !== 'APPROVAL_REQUIRED') {
-    throw new ApprovalPreconditionError('plan is not in APPROVAL_REQUIRED status');
-  }
-
-  const hash = computeDecisionBasisHash(basis);
-
-  const existing = await db
-    .select()
-    .from(approvalsTable)
-    .where(
-      and(eq(approvalsTable.tenantId, ctx.tenantId), eq(approvalsTable.decisionBasisHash, hash)),
-    )
-    .limit(1);
-  if (existing[0]) return toApprovalRecord(existing[0]);
-
-  const id = `approval_${randomUUID()}`;
-  const requestedAt = new Date();
-  await db.transaction(async (tx) => {
-    await tx.insert(approvalsTable).values({
-      id,
-      tenantId: ctx.tenantId,
-      caseId: input.caseId,
-      planId: input.planId,
-      decisionBasisHash: hash,
-      decisionBasis: basis,
-      requiredRole: basis.required_role,
-      requesterId: input.requesterId,
-      state: 'REQUESTED',
-      requestedAt,
-      expiresAt: new Date(expiresAt),
+      const id = `approval_${randomUUID()}`;
+      const requestedAt = new Date();
+      await tx.insert(approvalsTable).values({
+        id,
+        tenantId: ctx.tenantId,
+        caseId: input.caseId,
+        planId: input.planId,
+        decisionBasisHash: hash,
+        decisionBasis: basis,
+        requiredRole: basis.required_role,
+        requesterId: requester.userId,
+        reason: input.reason ?? null,
+        state: 'REQUESTED',
+        requestedAt,
+        expiresAt: new Date(expiresAt),
+        version: 0,
+      });
+      await tx.insert(auditEntries).values({
+        id: `audit_${randomUUID()}`,
+        tenantId: ctx.tenantId,
+        artifactType: 'APPROVAL',
+        artifactId: id,
+        artifactHash: hash,
+        actorId: requester.userId,
+        actorRole: 'case_manager',
+        details: {
+          operation: 'approval_requested',
+          case_id: input.caseId,
+          plan_id: input.planId,
+          resource_version: 0,
+        },
+      });
+      const inserted = await loadApproval(tx, ctx, id);
+      return toApprovalRecord(inserted!);
     });
-    await tx.insert(auditEntries).values({
-      id: `audit_${randomUUID()}`,
-      tenantId: ctx.tenantId,
-      artifactType: 'APPROVAL',
-      artifactId: id,
-      artifactHash: hash,
-      actorId: input.requesterId,
-      actorRole: 'case_manager',
-      details: { operation: 'approval_requested', case_id: input.caseId, plan_id: input.planId },
-    });
-  });
-
-  return {
-    schema_version: '1.0',
-    approval_id: id,
-    decision_basis_hash: hash,
-    requester_id: input.requesterId,
-    requested_at: requestedAt.toISOString(),
-    expires_at: expiresAt,
-    state: 'REQUESTED',
-    approver_id: null,
-    approver_role: null,
-    decision: null,
-    reason: input.reason ?? null,
-    decided_at: null,
-  };
+  } catch (error) {
+    if (basisHash && isUniqueViolation(error, 'approvals_effective_basis_uq')) {
+      const existing = await db
+        .select()
+        .from(approvalsTable)
+        .where(
+          and(
+            eq(approvalsTable.tenantId, ctx.tenantId),
+            eq(approvalsTable.decisionBasisHash, basisHash),
+            eq(approvalsTable.state, 'REQUESTED'),
+          ),
+        )
+        .limit(1);
+      if (existing[0]) return toApprovalRecord(existing[0]);
+    }
+    throw error;
+  }
 }
 
-async function loadApproval(db: Database, ctx: TenantContext, approvalId: string) {
+async function loadApproval(db: DbExecutor, ctx: TenantContext, approvalId: string) {
   const rows = await db
     .select()
     .from(approvalsTable)
     .where(and(eq(approvalsTable.tenantId, ctx.tenantId), eq(approvalsTable.id, approvalId)))
     .limit(1);
   return rows[0] ?? null;
-}
-
-/** Lazily expire a REQUESTED approval whose TTL has passed. */
-async function expireIfPast(
-  db: Database,
-  ctx: TenantContext,
-  approval: NonNullable<Awaited<ReturnType<typeof loadApproval>>>,
-): Promise<ApprovalState> {
-  if (approval.state !== 'REQUESTED' || approval.expiresAt.getTime() > Date.now()) {
-    return approval.state as ApprovalState;
-  }
-  await db
-    .update(approvalsTable)
-    .set({ state: 'EXPIRED', decidedAt: new Date() })
-    .where(
-      and(
-        eq(approvalsTable.tenantId, ctx.tenantId),
-        eq(approvalsTable.id, approval.id),
-        eq(approvalsTable.state, 'REQUESTED'),
-      ),
-    );
-  return 'EXPIRED';
 }
 
 export interface DecideApprovalInput {
@@ -186,7 +188,6 @@ export interface DecideApprovalInput {
   readonly decision: 'approve' | 'reject' | 'request_more_evidence';
   readonly reason?: string | null;
   readonly approverId: string;
-  readonly approverRole: string;
 }
 
 export async function decideApproval(
@@ -194,150 +195,197 @@ export async function decideApproval(
   ctx: TenantContext,
   input: DecideApprovalInput,
 ): Promise<ApprovalRecord> {
-  const approval = await loadApproval(db, ctx, input.approvalId);
-  if (!approval || approval.caseId !== input.caseId) throw new ApprovalNotFoundError();
-
-  const liveState = await expireIfPast(db, ctx, approval);
-  if (liveState !== 'REQUESTED') throw new ApprovalStateConflictError(`approval is ${liveState}`);
-  if (approval.decisionBasisHash !== input.decisionBasisHash) throw new ApprovalStaleError();
-  if (input.decision === 'approve' && approval.requesterId === input.approverId) {
-    throw new ApprovalSelfApprovalError();
+  if (input.decision !== 'approve' && !input.reason) {
+    throw new ApprovalPreconditionError('a reason is required for this approval decision');
   }
+  const outcome = await db.transaction(async (tx) => {
+    await lockControlLoopCase(tx, ctx, input.caseId);
+    await tx.execute(
+      sql`select id from approvals where tenant_id = ${ctx.tenantId} and id = ${input.approvalId} for update`,
+    );
+    const approval = await loadApproval(tx, ctx, input.approvalId);
+    if (!approval || approval.caseId !== input.caseId) throw new ApprovalNotFoundError();
 
-  const storedBasis = approval.decisionBasis as ApprovalDecisionBasis;
-  const rebuilt = await rebuildDecisionBasis(
-    db,
-    ctx,
-    { caseId: approval.caseId, planId: approval.planId },
-    storedBasis.expires_at,
-  );
-  if (!rebuilt || computeDecisionBasisHash(rebuilt) !== approval.decisionBasisHash) {
-    await db
+    const approver = await authorizeTenantActorForUpdate(tx, ctx, input.approverId, [
+      'finance_approver',
+    ]);
+    assertHasAnyRole(approver.roles, [approval.requiredRole as Role]);
+    if (approval.state !== 'REQUESTED') {
+      return { conflict: approval.state as ApprovalState } as const;
+    }
+    const decidedAt = new Date();
+    if (approval.expiresAt.getTime() <= decidedAt.getTime()) {
+      const expired = await tx
+        .update(approvalsTable)
+        .set({ state: 'EXPIRED', decidedAt, version: approval.version + 1 })
+        .where(
+          and(
+            eq(approvalsTable.tenantId, ctx.tenantId),
+            eq(approvalsTable.id, approval.id),
+            eq(approvalsTable.state, 'REQUESTED'),
+            eq(approvalsTable.version, approval.version),
+          ),
+        )
+        .returning();
+      if (expired.length !== 1) return { conflict: 'REQUESTED' as ApprovalState } as const;
+      await insertApprovalAudit(tx, ctx, expired[0]!, null, null, 'approval_expired');
+      return { conflict: 'EXPIRED' as ApprovalState } as const;
+    }
+    if (approval.decisionBasisHash !== input.decisionBasisHash) {
+      return { stale: true } as const;
+    }
+    if (input.decision === 'approve' && approval.requesterId === approver.userId) {
+      throw new ApprovalSelfApprovalError();
+    }
+
+    const storedBasis = approval.decisionBasis as ApprovalDecisionBasis;
+    const rebuilt = await rebuildDecisionBasis(
+      tx,
+      ctx,
+      { caseId: approval.caseId, planId: approval.planId },
+      storedBasis.expires_at,
+    );
+    if (!rebuilt || computeDecisionBasisHash(rebuilt) !== approval.decisionBasisHash) {
+      const invalidated = await tx
+        .update(approvalsTable)
+        .set({ state: 'INVALIDATED', decidedAt, version: approval.version + 1 })
+        .where(
+          and(
+            eq(approvalsTable.tenantId, ctx.tenantId),
+            eq(approvalsTable.id, approval.id),
+            eq(approvalsTable.state, 'REQUESTED'),
+            eq(approvalsTable.version, approval.version),
+          ),
+        )
+        .returning();
+      if (invalidated.length !== 1) return { conflict: 'REQUESTED' as ApprovalState } as const;
+      await insertApprovalAudit(tx, ctx, invalidated[0]!, null, null, 'approval_invalidated');
+      return { stale: true } as const;
+    }
+
+    const targetState = input.decision === 'approve' ? 'APPROVED' : 'REJECTED';
+    assertApprovalTransition(approval.state as ApprovalState, targetState);
+    const updated = await tx
       .update(approvalsTable)
-      .set({ state: 'INVALIDATED', decidedAt: new Date() })
+      .set({
+        state: targetState,
+        approverId: approver.userId,
+        decision: input.decision,
+        reason: input.reason ?? null,
+        decidedAt,
+        version: approval.version + 1,
+      })
       .where(
         and(
           eq(approvalsTable.tenantId, ctx.tenantId),
           eq(approvalsTable.id, approval.id),
           eq(approvalsTable.state, 'REQUESTED'),
+          eq(approvalsTable.version, approval.version),
         ),
-      );
-    throw new ApprovalStaleError();
-  }
+      )
+      .returning();
+    if (updated.length !== 1) return { conflict: 'REQUESTED' as ApprovalState } as const;
+    await insertApprovalAudit(
+      tx,
+      ctx,
+      updated[0]!,
+      approver.userId,
+      approval.requiredRole,
+      'approval_decided',
+      { decision: input.decision, reason: input.reason ?? null },
+    );
 
-  const targetState = input.decision === 'approve' ? 'APPROVED' : 'REJECTED';
-  assertApprovalTransition(approval.state as ApprovalState, targetState);
-
-  const decidedAt = new Date();
-  const updated = await db
-    .update(approvalsTable)
-    .set({
-      state: targetState,
-      approverId: input.approverId,
-      decision: input.decision,
-      reason: input.reason ?? null,
-      decidedAt,
-    })
-    .where(
-      and(
-        eq(approvalsTable.tenantId, ctx.tenantId),
-        eq(approvalsTable.id, approval.id),
-        eq(approvalsTable.state, 'REQUESTED'),
-      ),
-    )
-    .returning({ id: approvalsTable.id });
-  if (updated.length !== 1)
-    throw new ApprovalStateConflictError('approval was decided concurrently');
-
-  await db.insert(auditEntries).values({
-    id: `audit_${randomUUID()}`,
-    tenantId: ctx.tenantId,
-    artifactType: 'APPROVAL',
-    artifactId: approval.id,
-    artifactHash: approval.decisionBasisHash,
-    actorId: input.approverId,
-    actorRole: input.approverRole,
-    details: {
-      operation: 'approval_decided',
-      decision: input.decision,
-      reason: input.reason ?? null,
-    },
-  });
-
-  if (targetState === 'APPROVED') {
-    const planRows = await db
-      .select({ status: plansTable.status, version: plansTable.version })
-      .from(plansTable)
-      .where(and(eq(plansTable.tenantId, ctx.tenantId), eq(plansTable.id, approval.planId)))
-      .limit(1);
-    if (planRows[0]) {
-      // Deliberately does NOT bump `plan.version`: `plan_version` is one of
-      // the 17 decision-basis fields the approval was granted against, and
-      // action reservation must be able to rebuild that SAME basis and match
-      // it against this approval afterward. Bumping it here would make every
-      // approval instantly stale against its own resulting authorization.
-      await db
+    if (targetState === 'APPROVED') {
+      const planUpdated = await tx
         .update(plansTable)
         .set({ status: 'AUTHORIZED' })
         .where(
           and(
             eq(plansTable.tenantId, ctx.tenantId),
             eq(plansTable.id, approval.planId),
-            eq(plansTable.version, planRows[0].version),
+            eq(plansTable.status, 'APPROVAL_REQUIRED'),
+            eq(plansTable.version, storedBasis.plan_version),
           ),
-        );
+        )
+        .returning({ id: plansTable.id });
+      if (planUpdated.length !== 1) throw new ApprovalStaleError();
+    } else {
+      const caseRows = await tx
+        .select({ lifecycleState: cases.lifecycleState, version: cases.version })
+        .from(cases)
+        .where(and(eq(cases.tenantId, ctx.tenantId), eq(cases.id, approval.caseId)))
+        .limit(1);
+      const caseRow = caseRows[0];
+      if (!caseRow) throw new ApprovalNotFoundError();
+      await transitionCaseInTransaction(tx, ctx, {
+        caseId: approval.caseId,
+        toState: input.decision === 'request_more_evidence' ? 'abstained' : 'rejected',
+        reason: `approval_decision:${input.decision}`,
+        expectedVersion: caseRow.version,
+        actorId: approver.userId,
+        actorRole: approval.requiredRole,
+      });
     }
-  }
+    return { record: toApprovalRecord(updated[0]!) } as const;
+  });
 
-  // APPROVE deliberately does NOT transition the case here: `case_version` is
-  // one of the 17 decision-basis fields this SAME approval was just granted
-  // against, and action reservation must rebuild-and-compare that identical
-  // basis afterward (backend PRD §12.4). Bumping case_version as a direct side
-  // effect of granting the approval would make every approval permanently
-  // stale the instant it is issued. `reserveAction` performs the
-  // `approval_required -> approved -> executing` chain atomically instead,
-  // AFTER the basis comparison has already succeeded. REJECT and
-  // REQUEST_MORE_EVIDENCE are terminal for this cycle (no later execute needs
-  // this basis to stay stable), so they transition the case immediately.
-  const caseTargetState = targetState === 'APPROVED' ? 'approved' : 'rejected';
-  const caseRows = await db
-    .select({ lifecycleState: cases.lifecycleState, version: cases.version })
-    .from(cases)
-    .where(and(eq(cases.tenantId, ctx.tenantId), eq(cases.id, approval.caseId)))
-    .limit(1);
-  if (
-    targetState !== 'APPROVED' &&
-    caseRows[0] &&
-    caseRows[0].lifecycleState !== caseTargetState &&
-    (caseRows[0].lifecycleState === 'approval_required' || input.decision !== 'approve')
-  ) {
-    try {
-      const targetCaseState: CaseLifecycleState =
-        input.decision === 'request_more_evidence'
-          ? 'abstained'
-          : (caseTargetState as CaseLifecycleState);
-      assertCaseLifecycleTransition(
-        caseRows[0].lifecycleState as CaseLifecycleState,
-        targetCaseState,
-      );
-      await db
-        .update(cases)
-        .set({ lifecycleState: targetCaseState, version: caseRows[0].version + 1 })
-        .where(
-          and(
-            eq(cases.tenantId, ctx.tenantId),
-            eq(cases.id, approval.caseId),
-            eq(cases.version, caseRows[0].version),
-          ),
-        );
-    } catch {
-      // A raced/forbidden case transition never rolls back the already
-      // committed, append-only approval decision.
+  if ('record' in outcome && outcome.record) return outcome.record;
+  if ('stale' in outcome) throw new ApprovalStaleError();
+  throw new ApprovalStateConflictError(`approval is ${outcome.conflict}`);
+}
+
+async function insertApprovalAudit(
+  db: DbExecutor,
+  ctx: TenantContext,
+  approval: typeof approvalsTable.$inferSelect,
+  actorId: string | null,
+  actorRole: string | null,
+  operation: string,
+  details: Record<string, unknown> = {},
+): Promise<void> {
+  await db.insert(auditEntries).values({
+    id: `audit_${randomUUID()}`,
+    tenantId: ctx.tenantId,
+    artifactType: 'APPROVAL',
+    artifactId: approval.id,
+    artifactHash: approval.decisionBasisHash,
+    actorId,
+    actorRole,
+    details: { operation, resource_version: approval.version, ...details },
+  });
+}
+
+/** Atomically expire and audit one approval if its persisted TTL has elapsed. */
+async function expireApprovalIfPast(
+  db: Database,
+  ctx: TenantContext,
+  approvalId: string,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select id from approvals where tenant_id = ${ctx.tenantId} and id = ${approvalId} for update`,
+    );
+    const approval = await loadApproval(tx, ctx, approvalId);
+    if (!approval || approval.state !== 'REQUESTED' || approval.expiresAt.getTime() > Date.now()) {
+      return;
     }
-  }
-
-  const fresh = await loadApproval(db, ctx, approval.id);
-  return toApprovalRecord(fresh!);
+    const decidedAt = new Date();
+    const updated = await tx
+      .update(approvalsTable)
+      .set({ state: 'EXPIRED', decidedAt, version: approval.version + 1 })
+      .where(
+        and(
+          eq(approvalsTable.tenantId, ctx.tenantId),
+          eq(approvalsTable.id, approval.id),
+          eq(approvalsTable.state, 'REQUESTED'),
+          eq(approvalsTable.version, approval.version),
+        ),
+      )
+      .returning();
+    if (updated[0]) {
+      await insertApprovalAudit(tx, ctx, updated[0], null, null, 'approval_expired');
+    }
+  });
 }
 
 export async function getApprovalById(
@@ -347,7 +395,7 @@ export async function getApprovalById(
 ): Promise<ApprovalRecord | null> {
   const approval = await loadApproval(db, ctx, approvalId);
   if (!approval) return null;
-  await expireIfPast(db, ctx, approval);
+  await expireApprovalIfPast(db, ctx, approval.id);
   const fresh = await loadApproval(db, ctx, approvalId);
   return fresh ? toApprovalRecord(fresh) : null;
 }
@@ -365,7 +413,7 @@ export async function getCurrentApprovalForPlan(
     .limit(1);
   const row = rows[0];
   if (!row) return null;
-  await expireIfPast(db, ctx, row);
+  await expireApprovalIfPast(db, ctx, row.id);
   const fresh = await loadApproval(db, ctx, row.id);
   return fresh ? toApprovalRecord(fresh) : null;
 }
@@ -444,10 +492,17 @@ export async function listApprovals(
     .orderBy(desc(approvalsTable.requestedAt), asc(approvalsTable.id))
     .limit(filter.limit + 1);
 
-  for (const row of rows) await expireIfPast(db, ctx, row.approval);
+  for (const row of rows) await expireApprovalIfPast(db, ctx, row.approval.id);
 
-  const page = rows.slice(0, filter.limit);
-  const hasMore = rows.length > filter.limit;
+  const refreshedRows = await Promise.all(
+    rows.map(async (row) => ({
+      ...row,
+      approval: (await loadApproval(db, ctx, row.approval.id))!,
+    })),
+  );
+
+  const page = refreshedRows.slice(0, filter.limit);
+  const hasMore = refreshedRows.length > filter.limit;
   const last = page.at(-1)?.approval;
   return {
     items: page.map((row) => ({
@@ -464,6 +519,20 @@ export async function listApprovals(
           ).toString('base64url')
         : null,
   };
+}
+
+/** Persisted optimistic-concurrency version for API mutation envelopes. */
+export async function getApprovalResourceVersion(
+  db: Database,
+  ctx: TenantContext,
+  approvalId: string,
+): Promise<number | null> {
+  const rows = await db
+    .select({ version: approvalsTable.version })
+    .from(approvalsTable)
+    .where(and(eq(approvalsTable.tenantId, ctx.tenantId), eq(approvalsTable.id, approvalId)))
+    .limit(1);
+  return rows[0]?.version ?? null;
 }
 
 /**
@@ -513,6 +582,7 @@ function toApprovalRecord(row: typeof approvalsTable.$inferSelect): ApprovalReco
       };
     case 'EXPIRED':
     case 'INVALIDATED':
+      if (!row.decidedAt) throw new Error('terminal approval is missing decided_at');
       return {
         ...base,
         state: row.state,
@@ -520,7 +590,7 @@ function toApprovalRecord(row: typeof approvalsTable.$inferSelect): ApprovalReco
         approver_role: null,
         decision: null,
         reason: row.reason,
-        decided_at: (row.decidedAt ?? new Date()).toISOString(),
+        decided_at: row.decidedAt.toISOString(),
       };
     default:
       throw new Error(`unknown approval state: ${row.state}`);

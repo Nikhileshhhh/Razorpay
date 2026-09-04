@@ -215,3 +215,51 @@ export function analyzeTree(srcRoot: string, repoRoot: string): Violation[] {
   }
   return violations;
 }
+
+/**
+ * Resolve a relative ESM specifier (as written in TS source, `.js` extension
+ * included) from `fromFile` to an actual `.ts`/`.tsx` source file on disk, or
+ * `null` for a package/builtin specifier that has no local file.
+ */
+function resolveRelativeSpecifier(fromFile: string, specifier: string): string | null {
+  if (!isRelative(specifier)) return null;
+  const withoutExt = specifier.replace(/\.jsx?$/, '');
+  const base = resolve(dirname(fromFile), withoutExt);
+  for (const candidate of [`${base}.ts`, `${base}.tsx`, join(base, 'index.ts')]) {
+    try {
+      if (statSync(candidate).isFile()) return candidate;
+    } catch {
+      // try next candidate
+    }
+  }
+  return null;
+}
+
+/**
+ * BFS the real, statically-resolvable import graph starting from `entryFile`
+ * and return the absolute paths of every source file transitively reachable
+ * (entry file included). Used to PROVE a given module (e.g. the adapter
+ * dispatch registry) is never reachable from a given process entry point —
+ * a stronger guarantee than the per-directory layer rules above, which only
+ * check adjacent-layer imports, not deep transitive reachability.
+ */
+export function reachableFiles(entryFile: string): Set<string> {
+  const visited = new Set<string>();
+  const queue = [resolve(entryFile)];
+  while (queue.length > 0) {
+    const current = queue.pop()!;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    let code: string;
+    try {
+      code = readFileSync(current, 'utf8');
+    } catch {
+      continue;
+    }
+    for (const specifier of extractSpecifiers(code)) {
+      const resolved = resolveRelativeSpecifier(current, specifier);
+      if (resolved && !visited.has(resolved)) queue.push(resolved);
+    }
+  }
+  return visited;
+}
