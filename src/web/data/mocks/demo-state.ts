@@ -4,14 +4,12 @@
  * Both the Overview/Demo-status fixtures and the Scenario Controller read and
  * write this single source of truth, so advancing a scenario in the drawer
  * deterministically changes what the Overview page renders (the "Agent claim
- * versus retained financial value" panel and the KPI cards) without any
- * backend, worker or database. State is persisted to `localStorage` so it
- * survives reloads and is global across demo roles — an operator advance is
- * visible to a viewer on the same browser.
+ * versus retained financial value" panel and the KPI cards) with no backend.
  *
- * Step counts and labels here match the uploaded Overview design frames, not
- * the backend's step counts, because in fixture mode these frames ARE the
- * source of truth.
+ * Model: the Overview reflects the **most recently advanced** scenario at its
+ * current step ("last advanced wins"). That removes precedence masking and makes
+ * every scenario's progression visible. State persists to `localStorage` so it
+ * survives reloads and is shared across demo roles on the same browser.
  */
 
 export interface ScenarioDef {
@@ -30,95 +28,106 @@ export const DEMO_SCENARIOS: readonly ScenarioDef[] = [
 /** Completed step per scenario id. Absent id ⇒ step 0 (untouched). */
 export type ScenarioSteps = Readonly<Record<string, number>>;
 
-/**
- * Which frame the claim-truth panel shows, derived from the aggregate scenario
- * state. Kept small and explicit so the Overview fixture is a pure function of
- * this value.
- */
-export type ClaimFrame =
-  | 'none' // honest empty state — no agent claim in this stage
-  | 'pending' // a scenario is mid-flight; a claim exists but is not yet concluded
-  | 'verified_missing_transfer' // uploaded Image A: VERIFIED ₹4,55,000 with full chain
-  | 'verified_reversal' // claim-reversal step 2: VERIFIED ₹1,20,000, no refund yet
-  | 'reversed'; // uploaded Image B: REVERSED ₹0.00 after correlated refund
+/** Persisted demo state: per-scenario steps + the last scenario advanced. */
+export interface DemoState {
+  readonly steps: ScenarioSteps;
+  readonly last: string | null;
+}
+
+/** The scenario currently driving the Overview (last advanced, step > 0). */
+export interface ActiveScenario {
+  readonly id: string;
+  readonly step: number;
+  readonly total: number;
+}
 
 const STORAGE_KEY = 'moneytrace:demo-state';
 
-/**
- * Fresh-browser default: the missing-transfer-remediation scenario is already
- * complete, so the Overview loads showing the VERIFIED ₹4,55,000 agent-claim
- * frame (uploaded Image A) immediately. Reset returns to the honest baseline.
- */
-const DEFAULT_SEED: ScenarioSteps = { 'missing-transfer-remediation': 4 };
+/** Fresh browser / after reset: nothing advanced → the Overview shows the honest
+ * empty claim panel and baseline KPIs, so advancing any scenario is clearly what
+ * populates the page. */
+const DEFAULT_STATE: DemoState = { steps: {}, last: null };
 
 function totalFor(id: string): number {
   return DEMO_SCENARIOS.find((scenario) => scenario.id === id)?.totalSteps ?? 0;
 }
 
-function readStorage(): ScenarioSteps | null {
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) return null;
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw === null) return null;
-    const parsed = JSON.parse(raw) as unknown;
-    if (parsed === null || typeof parsed !== 'object') return null;
-    const result: Record<string, number> = {};
-    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-      if (typeof value === 'number' && Number.isFinite(value)) {
-        result[key] = Math.max(0, Math.min(totalFor(key), Math.trunc(value)));
-      }
+function sanitizeSteps(raw: Record<string, unknown>): ScenarioSteps {
+  const result: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      const clamped = Math.max(0, Math.min(totalFor(key), Math.trunc(value)));
+      if (clamped > 0) result[key] = clamped;
     }
-    return result;
+  }
+  return result;
+}
+
+function readState(): DemoState {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return DEFAULT_STATE;
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (raw === null) return DEFAULT_STATE;
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed === null || typeof parsed !== 'object') return DEFAULT_STATE;
+    const obj = parsed as Record<string, unknown>;
+    // New shape: { steps, last }. Old shape (back-compat): a flat step map.
+    if (obj.steps && typeof obj.steps === 'object') {
+      const steps = sanitizeSteps(obj.steps as Record<string, unknown>);
+      const last = typeof obj.last === 'string' && steps[obj.last] ? obj.last : null;
+      return { steps, last };
+    }
+    return { steps: sanitizeSteps(obj), last: null };
   } catch {
-    return null;
+    return DEFAULT_STATE;
   }
 }
 
-function writeStorage(steps: ScenarioSteps): void {
+function writeState(state: DemoState): void {
   try {
     if (typeof window === 'undefined' || !window.localStorage) return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(steps));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
-    // Ignore — a private-mode or blocked store just means non-persistent demo.
+    // Private-mode / blocked store — demo just becomes non-persistent.
   }
 }
 
-/** Current completed-step map, seeding the default on first ever load. */
+/** Full current demo state. */
+export function getDemoState(): DemoState {
+  return readState();
+}
+
+/** Current completed-step map — consumed by the demo-status fixture. */
 export function getScenarioSteps(): ScenarioSteps {
-  const stored = readStorage();
-  if (stored === null) {
-    writeStorage(DEFAULT_SEED);
-    return DEFAULT_SEED;
-  }
-  return stored;
+  return readState().steps;
 }
 
-/** Advance one scenario by a single step (clamped to its total). Returns the new map. */
-export function advanceScenario(id: string): ScenarioSteps {
-  const current = getScenarioSteps();
-  const next = { ...current, [id]: Math.min(totalFor(id), (current[id] ?? 0) + 1) };
-  writeStorage(next);
+/** Advance one scenario by a single step (clamped) and mark it the active one. */
+export function advanceScenario(id: string): DemoState {
+  const current = readState();
+  const nextStep = Math.min(totalFor(id), (current.steps[id] ?? 0) + 1);
+  const next: DemoState = {
+    steps: { ...current.steps, [id]: nextStep },
+    last: id,
+  };
+  writeState(next);
   return next;
 }
 
-/** Return every scenario to its baseline (step 0) — the honest empty dataset. */
-export function resetScenarios(): ScenarioSteps {
-  const cleared: ScenarioSteps = {};
-  writeStorage(cleared);
-  return cleared;
+/** Return every scenario to baseline (empty) — the honest empty dataset. */
+export function resetScenarios(): DemoState {
+  writeState(DEFAULT_STATE);
+  return DEFAULT_STATE;
 }
 
 /**
- * Pure mapping from scenario progress to the claim-truth frame the Overview
- * should render. Precedence favours the most instructive terminal outcome when
- * more than one scenario has been advanced.
+ * The scenario the Overview should reflect: the last-advanced one, at its current
+ * step. `null` when nothing has been advanced (baseline / empty claim panel).
  */
-export function deriveClaimFrame(steps: ScenarioSteps): ClaimFrame {
-  const reversal = steps['claim-reversal'] ?? 0;
-  const missingTransfer = steps['missing-transfer-remediation'] ?? 0;
-  if (reversal >= 3) return 'reversed';
-  if (reversal >= 2) return 'verified_reversal';
-  if (missingTransfer >= 4) return 'verified_missing_transfer';
-  if (missingTransfer >= 1 || reversal >= 1) return 'pending';
-  return 'none';
+export function getActiveScenario(state: DemoState = readState()): ActiveScenario | null {
+  const id = state.last;
+  if (!id) return null;
+  const step = state.steps[id] ?? 0;
+  if (step <= 0) return null;
+  return { id, step, total: totalFor(id) };
 }

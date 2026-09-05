@@ -1,5 +1,5 @@
 import { AlertTriangle, Check, Circle, Square } from 'lucide-react';
-import type { ReactElement } from 'react';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
 import {
   buildVerificationTimeline,
   type TimelineStageVM,
@@ -34,6 +34,14 @@ function StageGlyph({ status }: { readonly status: TimelineStageVM['status'] }):
 
 export function VerificationTimeline({ caseId }: { readonly caseId: string }): ReactElement {
   const bundle = buildVerificationTimeline(caseId);
+  const [checked, setChecked] = useState<string | null>(null);
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const recheck = (): void => {
+    setChecked('Re-checked just now — stages 5–11 are still waiting; no change to the outcome.');
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setChecked(null), 4500);
+  };
   if (!bundle) {
     return (
       <EmptyState
@@ -49,8 +57,13 @@ export function VerificationTimeline({ caseId }: { readonly caseId: string }): R
         <div>
           <strong>{bundle.bannerTitle}</strong>
           <p>{bundle.bannerBody}</p>
+          {checked && (
+            <p className="vt-recheck-note" role="status">
+              {checked}
+            </p>
+          )}
         </div>
-        <button type="button" className="vt-check-status">
+        <button type="button" className="vt-check-status" onClick={recheck}>
           Check status
         </button>
       </div>
@@ -101,9 +114,14 @@ export function VerificationTimeline({ caseId }: { readonly caseId: string }): R
           </div>
           <div className="vt-side-card">
             <div className="vt-side-heading">CONTEXTUAL ACTION</div>
-            <button type="button" className="primary-button">
+            <button type="button" className="primary-button" onClick={recheck}>
               Check status
             </button>
+            {checked && (
+              <p className="vt-recheck-note" role="status">
+                {checked}
+              </p>
+            )}
             <p className="vt-mono-note">{bundle.contextualActionNote}</p>
           </div>
         </aside>

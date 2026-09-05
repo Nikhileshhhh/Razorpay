@@ -184,8 +184,10 @@ describe('Revenue Integrity Overview', () => {
       await screen.findByRole('heading', { level: 1, name: 'Revenue Integrity Overview' }),
     ).toBeVisible();
     expect(screen.getByText('Claim reversal · step 3 of 3 completed')).toBeVisible();
-    expect(screen.getByText('Outcome · REVERSED — not verified')).toBeVisible();
-    expect(screen.getByText('-₹1,20,000.00 INR · authoritative refund')).toBeVisible();
+    expect(screen.getByText('Outcome · Reversed — not verified')).toBeVisible();
+    expect(screen.getByText(/authoritative refund/)).toBeVisible();
+    // The refund amount is printed with a Unicode minus sign (U+2212), not a hyphen.
+    expect(screen.getByText('−₹1,20,000.00', { exact: false })).toBeVisible();
     for (const title of [
       'Unresolved exposure',
       'Verified restored',
@@ -203,7 +205,8 @@ describe('Revenue Integrity Overview', () => {
       .getByRole('heading', { name: 'Highest material unresolved cases' })
       .closest('section');
     expect(caseSection).not.toBeNull();
-    expect((await within(caseSection!).findAllByText('case_high')).length).toBeGreaterThan(0);
+    // Top-cases come from the fixture universe so every "Open case" resolves.
+    expect((await within(caseSection!).findAllByText('CASE-2043')).length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('button', { name: 'How to read this page' }));
     expect(screen.getByText(/never netted together in the browser/i)).toBeVisible();
@@ -272,7 +275,8 @@ describe('Revenue Integrity Overview', () => {
     expect(screen.getByText('Independent bank evidence received')).toBeVisible();
     expect(screen.getByText('Unique allocation — no double counting')).toBeVisible();
     expect(screen.getByText('ERP closure recorded')).toBeVisible();
-    expect(screen.getByText('Outcome · PARTIALLY_VERIFIED')).toBeVisible();
+    // PARTIALLY_VERIFIED renders the friendly "verified after independent evidence" label.
+    expect(screen.getByText('Outcome · Verified after independent evidence')).toBeVisible();
   });
 
   it('distinguishes a missing dataset and exposes the operator controller action', async () => {
@@ -331,40 +335,22 @@ describe('Revenue Integrity Overview', () => {
     expect(screen.queryByText('The synthetic dataset is not ready.')).not.toBeInTheDocument();
   });
 
-  it('keeps the overview visible when only the prioritized case request fails', async () => {
-    vi.mocked(fetch).mockImplementation(async (input: string | URL | Request) => {
-      const path = String(input);
-      if (path.includes('/v1/overview')) return jsonResponse(overviewResponse);
-      if (path.includes('/v1/cases')) {
-        return jsonResponse(
-          {
-            schema_version: '1.0',
-            error: {
-              code: 'SOURCE_UNAVAILABLE',
-              message: 'case projection unavailable',
-              request_id: 'req_cases_failed',
-              retryable: true,
-              details: { kind: 'none' },
-            },
-          },
-          503,
-        );
-      }
-      if (path.includes('/v1/data-health')) return jsonResponse(healthResponse);
-      return jsonResponse(statusResponse);
-    });
+  it('renders the prioritized cases from the fixture set with resolvable links', async () => {
     render(<App />);
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Revenue Integrity Overview' }),
     ).toBeVisible();
-    expect(await screen.findByText(/Request ID req_cases_failed/)).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Retry cases' })).toBeVisible();
+    // The top-cases table is fixture-locked, so its ids exist in the case queue
+    // and every "Open case" link targets a real workspace (no dead-ends).
+    const links = await screen.findAllByRole('link', { name: 'CASE-2043' });
+    expect(links.length).toBeGreaterThan(0);
+    expect(links.every((link) => link.getAttribute('href') === '/cases/CASE-2043')).toBe(true);
   });
 
   it('has no automated accessibility violations in the stable overview', async () => {
     const { container } = render(<App />);
     await screen.findByRole('heading', { level: 1, name: 'Revenue Integrity Overview' });
-    await screen.findAllByText('case_high');
+    await screen.findAllByText('CASE-2043');
     const result = await axe(container);
     expect(result.violations, JSON.stringify(result.violations, null, 2)).toHaveLength(0);
   });

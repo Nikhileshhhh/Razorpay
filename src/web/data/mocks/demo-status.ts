@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import { DemoStatusResponse } from '../../../contracts/index.js';
-import { DEMO_SCENARIOS, getScenarioSteps, type ScenarioSteps } from './demo-state.js';
+import { DEMO_SCENARIOS, getDemoState, type DemoState } from './demo-state.js';
 import { currentManifest } from './overview.js';
 import { FIXED_CLOCK, MANIFEST_HASH, SEED_ID } from './support.js';
 
@@ -9,30 +9,30 @@ type DemoStatusResponse = z.infer<typeof DemoStatusResponse>;
 /**
  * Demo overlay: when a live/mocked backend reports every scenario at baseline
  * (step 0) but the client has advanced one in the Demo Controller, project the
- * client steps onto the status so the drawer's "completed step X of Y" and the
+ * client state onto the status so the drawer's "completed step X of Y" and the
  * Overview stage chip reflect what the operator advanced — mirroring
  * {@link overlayOverviewResponse}. If any backend scenario is already advanced,
  * or the client is at baseline, the response is returned untouched.
  */
 export function overlayDemoStatus(
   response: DemoStatusResponse,
-  steps: ScenarioSteps = getScenarioSteps(),
+  state: DemoState = getDemoState(),
 ): DemoStatusResponse {
   const scenarios = response.data.scenarios;
   const backendBaseline = scenarios.every(
     (scenario) => scenario.current_step === 0 && scenario.completed_step === 0,
   );
-  const clientAdvanced = DEMO_SCENARIOS.some((scenario) => (steps[scenario.id] ?? 0) > 0);
+  const clientAdvanced = DEMO_SCENARIOS.some((scenario) => (state.steps[scenario.id] ?? 0) > 0);
   if (!backendBaseline || !clientAdvanced) return response;
   return {
     ...response,
     data: {
       ...response.data,
-      manifest: currentManifest(steps),
+      manifest: currentManifest(state),
       scenarios: scenarios.map((scenario) => {
         const registered = DEMO_SCENARIOS.find((entry) => entry.id === scenario.scenario_id);
         const total = registered?.totalSteps ?? scenario.total_steps;
-        const step = Math.max(0, Math.min(total, steps[scenario.scenario_id] ?? 0));
+        const step = Math.max(0, Math.min(total, state.steps[scenario.scenario_id] ?? 0));
         return {
           ...scenario,
           current_step: step,
@@ -55,9 +55,7 @@ export function overlayDemoStatus(
  * `completed` once its (synchronous) step settles — matching the real backend's
  * rule that `queued` means a step is durably in flight.
  */
-export function buildDemoStatusResponse(
-  steps: ScenarioSteps = getScenarioSteps(),
-): DemoStatusResponse {
+export function buildDemoStatusResponse(state: DemoState = getDemoState()): DemoStatusResponse {
   return {
     schema_version: '1.0',
     request_id: 'req_mock_demo_status',
@@ -67,9 +65,9 @@ export function buildDemoStatusResponse(
       ready: true,
       fixed_clock: FIXED_CLOCK,
       manifest_hash: MANIFEST_HASH,
-      manifest: currentManifest(steps),
+      manifest: currentManifest(state),
       scenarios: DEMO_SCENARIOS.map((scenario) => {
-        const step = Math.max(0, Math.min(scenario.totalSteps, steps[scenario.id] ?? 0));
+        const step = Math.max(0, Math.min(scenario.totalSteps, state.steps[scenario.id] ?? 0));
         return {
           scenario_id: scenario.id,
           current_step: step,
@@ -86,5 +84,6 @@ export function buildDemoStatusResponse(
 
 /** Static default-seed export for the `withMockFallback` path (fixture mode off). */
 export const MOCK_DEMO_STATUS_RESPONSE: DemoStatusResponse = buildDemoStatusResponse({
-  'missing-transfer-remediation': 4,
+  steps: { 'missing-transfer-remediation': 4 },
+  last: 'missing-transfer-remediation',
 });

@@ -1,9 +1,12 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useEffect, useState, type ReactElement, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { useIdentity } from '../../app/identity.js';
+import { recordDecision } from '../../data/mocks/approval-state.js';
 import {
   APPROVAL_TABS,
   approvalsByState,
+  approvalTabCounts,
   MOCK_APPROVALS,
   type ApprovalDetail,
   type ApprovalRowVM,
@@ -388,7 +391,7 @@ function ReasonDialog({
   readonly decision: 'reject' | 'request';
   readonly row: ApprovalRowVM;
   readonly detail: ApprovalDetail;
-  readonly onSubmit: () => void;
+  readonly onSubmit: (reason: string) => void;
   readonly onCancel: () => void;
 }): ReactElement {
   const [reason, setReason] = useState('');
@@ -401,7 +404,7 @@ function ReasonDialog({
 
   const submit = (): void => {
     setSubmitted(true);
-    if (!invalid) onSubmit();
+    if (!invalid) onSubmit(trimmed);
   };
 
   return (
@@ -585,22 +588,37 @@ function SuccessDialog({
 function ReviewDrawer({
   row,
   onClose,
+  onDecided,
 }: {
   readonly row: ApprovalRowVM;
   readonly onClose: () => void;
+  readonly onDecided: () => void;
 }): ReactElement {
+  const { identity } = useIdentity();
   const detail = row.detail;
   const [stage, setStage] = useState<DialogStage>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
+  const [reason, setReason] = useState('');
+  // Only a Finance Approver may decide; the requester (an investigator) never can.
+  const canDecide = identity.id === 'user_approver' && identity.id !== row.requesterId;
   const decidable = row.state === 'REQUESTED';
   const terminal = row.state === 'EXPIRED' || row.state === 'INVALIDATED';
   const decided = row.state === 'APPROVED' || row.state === 'REJECTED';
 
   useEffect(() => {
-    if (stage !== 'inflight') return;
-    const timer = window.setTimeout(() => setStage('success'), 900);
+    if (stage !== 'inflight' || !decision) return;
+    const timer = window.setTimeout(() => {
+      recordDecision(row.approvalId, {
+        decision,
+        reason: reason || undefined,
+        decidedById: identity.id,
+        decidedByName: identity.label,
+      });
+      onDecided();
+      setStage('success');
+    }, 900);
     return () => window.clearTimeout(timer);
-  }, [stage]);
+  }, [stage, decision, reason, row.approvalId, identity.id, identity.label, onDecided]);
 
   const start = (next: Decision): void => {
     setDecision(next);
@@ -826,7 +844,13 @@ function ReviewDrawer({
               </Row>
               <Row label="Required approver role">
                 <span className="apr-strong">{row.requiredRole} </span>
-                <span className="apr-match">— matches your demo role</span>
+                {canDecide ? (
+                  <span className="apr-match">— matches your demo role</span>
+                ) : (
+                  <span className="apr-mismatch">
+                    — your demo role is {identity.label}; Finance Approver required
+                  </span>
+                )}
               </Row>
               <Row label="Expiry">
                 {row.expiresLocal ?? (decided ? 'n/a — decided before expiry' : '—')}{' '}
@@ -882,7 +906,7 @@ function ReviewDrawer({
           </div>
 
           {/* Action footer */}
-          {decidable ? (
+          {decidable && canDecide ? (
             <div className="apr-drawer-foot">
               <div className="apr-drawer-actions">
                 <button
@@ -910,6 +934,25 @@ function ReviewDrawer({
               <p className="apr-drawer-foot-note">
                 Approve opens a final deliberate confirmation. Reject and Request more evidence each
                 require a bounded reason. No generic Confirm exists anywhere in this flow.
+              </p>
+            </div>
+          ) : decidable ? (
+            <div className="apr-drawer-foot">
+              <div className="apr-drawer-actions">
+                <button type="button" className="apr-btn apr-btn--primary" disabled>
+                  Approve simulated remediation
+                </button>
+                <button type="button" className="apr-btn apr-btn--reject" disabled>
+                  Reject
+                </button>
+                <button type="button" className="apr-btn apr-btn--ghost" disabled>
+                  Request more evidence
+                </button>
+              </div>
+              <p className="apr-drawer-foot-note">
+                Decision controls are limited to the <b>Finance Approver</b> role. Switch demo role
+                to Finance Approver to approve, reject or request more evidence. Your current role
+                can read the full decision basis.
               </p>
             </div>
           ) : (
@@ -948,7 +991,10 @@ function ReviewDrawer({
                   decision={stage}
                   row={row}
                   detail={detail}
-                  onSubmit={() => setStage('inflight')}
+                  onSubmit={(submittedReason) => {
+                    setReason(submittedReason);
+                    setStage('inflight');
+                  }}
                   onCancel={() => setStage(null)}
                 />
               )}
@@ -957,7 +1003,11 @@ function ReviewDrawer({
                 <SuccessDialog
                   decision={decision}
                   row={row}
-                  detail={detail}
+                  detail={{
+                    ...detail,
+                    approverName: identity.label,
+                    approverId: identity.id,
+                  }}
                   onOpenCase={onClose}
                   onBack={onClose}
                 />
@@ -1094,7 +1144,10 @@ function QueueTable({
 export function ApprovalReviewPage(): ReactElement {
   const [tab, setTab] = useState<ApprovalState>('REQUESTED');
   const [reviewing, setReviewing] = useState<ApprovalRowVM | null>(null);
+  // Bumped after a decision so the table + tab counts recompute from the store.
+  const [, bumpVersion] = useState(0);
   const rows = approvalsByState(tab);
+  const tabCounts = approvalTabCounts();
 
   return (
     <div className="apr-page">
@@ -1127,7 +1180,7 @@ export function ApprovalReviewPage(): ReactElement {
             onClick={() => setTab(item.key)}
           >
             {item.label}
-            <span className="apr-tab-count">{item.count}</span>
+            <span className="apr-tab-count">{tabCounts[item.key]}</span>
           </button>
         ))}
         <span className="apr-tabs-note">
@@ -1210,7 +1263,13 @@ export function ApprovalReviewPage(): ReactElement {
         <QueueTable rows={rows} onReview={setReviewing} />
       )}
 
-      {reviewing && <ReviewDrawer row={reviewing} onClose={() => setReviewing(null)} />}
+      {reviewing && (
+        <ReviewDrawer
+          row={reviewing}
+          onClose={() => setReviewing(null)}
+          onDecided={() => bumpVersion((v) => v + 1)}
+        />
+      )}
 
       <p className="sr-only">
         {MOCK_APPROVALS.length} approvals loaded from the synthetic dataset.
