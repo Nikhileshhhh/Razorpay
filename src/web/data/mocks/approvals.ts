@@ -1,4 +1,5 @@
 import type { Money } from '../../../contracts/index.js';
+import { getApprovalOverrides, type ApprovalOverride } from './approval-state.js';
 
 /**
  * Approval Review view model (MoneyTrace Approval Review.dc.html, frames 1a–1c).
@@ -403,13 +404,75 @@ export const MOCK_APPROVALS: readonly ApprovalRowVM[] = [
       idempotencyKey: 'idem_2031_v5_00',
       terminationReason:
         'New contradicting evidence changed the sealed evidence set at 24 Aug 19:08 IST, so the decision basis no longer describes the case. A fresh request against the current basis is required; this record is retained unchanged.',
-      historicalBasis:
-        'CASE-2031 v5 · plan v2 4c70…88de · evidence b301…7a12 · basis e550…9f4c',
+      historicalBasis: 'CASE-2031 v5 · plan v2 4c70…88de · evidence b301…7a12 · basis e550…9f4c',
       decisionText: 'None recorded — invalidated before a decision',
     },
   },
 ];
 
+/** Apply a client-recorded decision to a fixture row (approve/reject move the
+ * row to a terminal state; request-more-evidence keeps it REQUESTED with a note). */
+function applyOverride(row: ApprovalRowVM, override: ApprovalOverride): ApprovalRowVM {
+  const stamp = `${override.decidedByName} · ${override.decidedAtLocal}`;
+  if (override.decision === 'approve') {
+    return {
+      ...row,
+      state: 'APPROVED',
+      expiryNote: 'n/a — decided before expiry',
+      decisionNote: stamp,
+      detail: {
+        ...row.detail,
+        decisionText: 'Approved — HUMAN APPROVAL recorded',
+        approverName: override.decidedByName,
+        approverId: override.decidedById,
+        decidedAtLocal: override.decidedAtLocal,
+      },
+    };
+  }
+  if (override.decision === 'reject') {
+    return {
+      ...row,
+      state: 'REJECTED',
+      expiryNote: 'n/a — decided before expiry',
+      decisionNote: stamp,
+      detail: {
+        ...row.detail,
+        decisionText: `Rejected — reason: ${override.reason ?? 'not provided'}`,
+        approverName: override.decidedByName,
+        approverId: override.decidedById,
+        decidedAtLocal: override.decidedAtLocal,
+      },
+    };
+  }
+  // request-more-evidence — remains REQUESTED, annotated.
+  return {
+    ...row,
+    decisionNote: `More evidence requested · ${stamp}`,
+  };
+}
+
+/** All fixture rows with any client-recorded decisions merged in. */
+export function mergedApprovals(): readonly ApprovalRowVM[] {
+  const overrides = getApprovalOverrides();
+  return MOCK_APPROVALS.map((row) => {
+    const override = overrides[row.approvalId];
+    return override ? applyOverride(row, override) : row;
+  });
+}
+
 export function approvalsByState(state: ApprovalRowVM['state']): readonly ApprovalRowVM[] {
-  return MOCK_APPROVALS.filter((row) => row.state === state);
+  return mergedApprovals().filter((row) => row.state === state);
+}
+
+/** Live per-state counts for the tab badges (merged with client decisions). */
+export function approvalTabCounts(): Record<ApprovalRowVM['state'], number> {
+  const counts: Record<ApprovalRowVM['state'], number> = {
+    REQUESTED: 0,
+    APPROVED: 0,
+    REJECTED: 0,
+    EXPIRED: 0,
+    INVALIDATED: 0,
+  };
+  for (const row of mergedApprovals()) counts[row.state] += 1;
+  return counts;
 }

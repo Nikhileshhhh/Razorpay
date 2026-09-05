@@ -9,8 +9,8 @@ import {
   ShieldAlert,
   X,
 } from 'lucide-react';
-import { useState, type ReactElement, type ReactNode } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Fragment, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { Money } from '../../../contracts/index.js';
 import { useIdentity } from '../../app/identity.js';
 import {
@@ -82,6 +82,20 @@ function LaneNode({ node }: { readonly node: MoneyPathNodeVM }): ReactElement {
   );
 }
 
+const OBSERVED_KINDS: ReadonlySet<MoneyPathNodeVM['kind']> = new Set([
+  'source_fact',
+  'derived',
+  'acknowledgement',
+]);
+
+/** A verified/derived edge (solid) joins two persisted observed nodes; any edge
+ * into a `no_data` node is "expected only" (dashed) — matching the legend. */
+function observedEdgeClass(prev: MoneyPathNodeVM, curr: MoneyPathNodeVM): string {
+  return OBSERVED_KINDS.has(prev.kind) && OBSERVED_KINDS.has(curr.kind)
+    ? 'mp-edge'
+    : 'mp-edge mp-edge--dashed';
+}
+
 function MoneyPathSection({ workspace }: { readonly workspace: PrimaryWorkspaceVM }): ReactElement {
   return (
     <section aria-label="Expected versus observed money path" className="workspace-card">
@@ -92,14 +106,25 @@ function MoneyPathSection({ workspace }: { readonly workspace: PrimaryWorkspaceV
       <div className="mp-lane-block">
         <div className="mp-lane-label">EXPECTED LANE · ALWAYS VISIBLE</div>
         <div className="mp-lane mp-lane--expected">
-          {workspace.expectedLane.map((node) => (
-            <LaneNode key={node.key} node={node} />
+          {workspace.expectedLane.map((node, index) => (
+            <Fragment key={node.key}>
+              {index > 0 && <span className="mp-edge mp-edge--dashed" aria-hidden="true" />}
+              <LaneNode node={node} />
+            </Fragment>
           ))}
         </div>
         <div className="mp-lane-label">OBSERVED LANE · PERSISTED NODES ONLY</div>
         <div className="mp-lane mp-lane--observed">
-          {workspace.observedLane.map((node) => (
-            <LaneNode key={node.key} node={node} />
+          {workspace.observedLane.map((node, index) => (
+            <Fragment key={node.key}>
+              {index > 0 && (
+                <span
+                  className={observedEdgeClass(workspace.observedLane[index - 1]!, node)}
+                  aria-hidden="true"
+                />
+              )}
+              <LaneNode node={node} />
+            </Fragment>
           ))}
           <div className="mp-divergence">
             <AlertTriangle aria-hidden="true" size={16} />
@@ -243,8 +268,117 @@ function EvidenceTimelineSection({
   );
 }
 
-function CommandButton({ command }: { readonly command: CommandVM }): ReactElement {
+/**
+ * Which demo roles may invoke each contextual command. Absent label ⇒ allowed
+ * for everyone. Gating actions (not page access) is what makes switching the
+ * demo role visibly change behaviour on the case page.
+ */
+const COMMAND_ROLES: Readonly<Record<string, readonly string[]>> = {
+  'Run investigation': ['user_investigator', 'user_operator'],
+  'Request more evidence': ['user_investigator', 'user_operator'],
+  'Add operator note': ['user_investigator', 'user_approver', 'user_operator'],
+  'Review candidate relationship': ['user_investigator', 'user_operator'],
+  'Review approval': ['user_approver'],
+  // 'Check status' and 'View audit replay' are unrestricted (read-only).
+};
+
+function roleNote(label: string): string {
+  const roles = COMMAND_ROLES[label];
+  if (!roles) return '';
+  if (roles.length === 1 && roles[0] === 'user_approver') return 'Finance Approver only';
+  if (roles.includes('user_investigator')) return 'Investigator only';
+  return 'Not available for your role';
+}
+
+interface WorkspaceCommands {
+  readonly feedback: string | null;
+  readonly isAllowed: (label: string) => boolean;
+  readonly runCommand: (command: CommandVM) => void;
+}
+
+/** Client-side behaviour for the contextual command rail (navigation, focus, or
+ * a transient confirmation) — no backend calls; this is a demo prototype. */
+function useWorkspaceCommands(caseId: string): WorkspaceCommands {
+  const { identity } = useIdentity();
+  const navigate = useNavigate();
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const timer = useRef<number | undefined>(undefined);
+
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  const flash = (message: string): void => {
+    setFeedback(message);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setFeedback(null), 4500);
+  };
+
+  const focusById = (id: string): void => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) el.focus();
+  };
+
+  const isAllowed = (label: string): boolean => {
+    const roles = COMMAND_ROLES[label];
+    return roles ? roles.includes(identity.id) : true;
+  };
+
+  const runCommand = (command: CommandVM): void => {
+    if (!isAllowed(command.label)) return;
+    switch (command.label) {
+      case 'View audit replay':
+        navigate(`/audit?case=${caseId}`);
+        break;
+      case 'Review approval':
+        navigate('/approvals');
+        break;
+      case 'Add operator note':
+        focusById('operator-note-input');
+        break;
+      case 'Review candidate relationship':
+        focusById('candidate-relationship');
+        break;
+      case 'Run investigation':
+        flash('Investigation queued — deterministic offline run recorded (no live model call).');
+        break;
+      case 'Request more evidence':
+        flash('Evidence request recorded against the current decision-basis hash.');
+        break;
+      case 'Check status':
+        flash('Status re-checked — still awaiting independent bank evidence. No change.');
+        break;
+      default:
+        flash(`${command.label} recorded.`);
+    }
+  };
+
+  return { feedback, isAllowed, runCommand };
+}
+
+function CommandButton({
+  command,
+  allowed,
+  onRun,
+}: {
+  readonly command: CommandVM;
+  readonly allowed: boolean;
+  readonly onRun: (command: CommandVM) => void;
+}): ReactElement {
   if (command.kind === 'locked') {
+    // The one locked command ("Review approval") becomes actionable for the role
+    // it names (Finance Approver); everyone else still sees the locked chip.
+    if (allowed) {
+      return (
+        <button
+          type="button"
+          className="rail-command rail-command--primary"
+          onClick={() => onRun(command)}
+        >
+          {command.label}
+        </button>
+      );
+    }
     return (
       <span className="rail-command rail-command--locked">
         {command.label}
@@ -255,10 +389,13 @@ function CommandButton({ command }: { readonly command: CommandVM }): ReactEleme
   return (
     <button
       type="button"
+      disabled={!allowed}
       className={`rail-command ${command.kind === 'primary' ? 'rail-command--primary' : ''}`}
+      onClick={allowed ? () => onRun(command) : undefined}
     >
       {command.label}
       {command.badge && <span className="rail-command-badge">{command.badge}</span>}
+      {!allowed && <span className="rail-command-note">{roleNote(command.label)}</span>}
     </button>
   );
 }
@@ -367,7 +504,11 @@ function CandidateRelationshipSection({
 }): ReactElement {
   const [decision, setDecision] = useState<CandidateDecision | null>(null);
   return (
-    <section aria-label="Candidate relationship review" className="workspace-card candidate-card">
+    <section
+      id="candidate-relationship"
+      aria-label="Candidate relationship review"
+      className="workspace-card candidate-card"
+    >
       <div className="candidate-card-heading">
         <span className="candidate-badge">CANDIDATE RELATIONSHIP</span>
         <span className="cq-mono-dim">never rendered inside the money path lanes</span>
@@ -483,6 +624,7 @@ function OperatorNotesSection({
           Add note · case version {caseVersion} · plain text, 1,000 characters
         </div>
         <textarea
+          id="operator-note-input"
           value={draft}
           onChange={(event) => setDraft(event.target.value.slice(0, 1000))}
           rows={3}
@@ -501,6 +643,7 @@ function OperatorNotesSection({
 }
 
 function ControlLoopRail({ workspace }: { readonly workspace: PrimaryWorkspaceVM }): ReactElement {
+  const { feedback, isAllowed, runCommand } = useWorkspaceCommands(workspace.caseId);
   return (
     <aside aria-label="Control loop" className="control-loop-rail">
       <div className="rail-heading">CONTROL LOOP · SIX ARTIFACTS</div>
@@ -520,8 +663,18 @@ function ControlLoopRail({ workspace }: { readonly workspace: PrimaryWorkspaceVM
       ))}
       <div className="rail-commands">
         <div className="rail-commands-heading">CONTEXTUAL COMMANDS</div>
+        {feedback && (
+          <div className="rail-command-feedback" role="status">
+            {feedback}
+          </div>
+        )}
         {workspace.commands.map((command) => (
-          <CommandButton key={command.label} command={command} />
+          <CommandButton
+            key={command.label}
+            command={command}
+            allowed={isAllowed(command.label)}
+            onRun={runCommand}
+          />
         ))}
       </div>
     </aside>
@@ -650,6 +803,7 @@ function CompactLaneNode({ node }: { readonly node: MoneyPathNodeVM }): ReactEle
 }
 
 function CompactWorkspace({ workspace }: { readonly workspace: CompactWorkspaceVM }): ReactElement {
+  const { feedback, isAllowed, runCommand } = useWorkspaceCommands(workspace.caseId);
   return (
     <div className="case-workspace-page case-workspace-page--compact">
       <Breadcrumb caseId={workspace.caseId} />
@@ -737,8 +891,18 @@ function CompactWorkspace({ workspace }: { readonly workspace: CompactWorkspaceV
       )}
       <div className="compact-commands">
         <span className="rail-commands-heading">COMMANDS</span>
+        {feedback && (
+          <div className="rail-command-feedback" role="status">
+            {feedback}
+          </div>
+        )}
         {workspace.commands.map((command) => (
-          <CommandButton key={command.label} command={command} />
+          <CommandButton
+            key={command.label}
+            command={command}
+            allowed={isAllowed(command.label)}
+            onRun={runCommand}
+          />
         ))}
         <span className="compact-commands-note">{workspace.commandsNote}</span>
       </div>

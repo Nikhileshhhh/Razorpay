@@ -3951,11 +3951,27 @@ a {
   display: flex;
   align-items: stretch;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 4px;
   margin-bottom: 14px;
 }
 .mp-lane--compact {
   margin-bottom: 0;
+}
+/* Connector between two money-path nodes. Solid = verified/derived edge between
+   persisted observed nodes; dashed = expected-only (no observed edge). */
+.mp-edge {
+  flex: 0 0 22px;
+  align-self: center;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--primary);
+}
+.mp-edge--dashed {
+  background: none;
+  border-top: 2px dashed var(--border-strong);
+  height: 0;
 }
 .mp-node {
   flex: 1 1 110px;
@@ -4071,6 +4087,9 @@ a {
   height: 2px;
   margin-right: 6px;
   vertical-align: middle;
+  background: var(--primary);
+}
+.mp-legend-key--verified {
   background: var(--primary);
 }
 .mp-legend-key--expected {
@@ -4557,6 +4576,23 @@ a {
   color: #5b6472;
   cursor: default;
 }
+.rail-command:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.rail-command:disabled:hover {
+  background: var(--surface);
+}
+.rail-command-feedback {
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #c6d9f7;
+  background: #eef4ff;
+  color: var(--primary-strong);
+  font-size: 11px;
+  line-height: 1.35;
+}
 .rail-command-note {
   margin-left: auto;
   font-family: var(--mono);
@@ -5022,6 +5058,16 @@ a {
   font-family: var(--mono);
   font-size: 9.5px !important;
   color: var(--ink-soft) !important;
+}
+.vt-recheck-note {
+  margin-top: 8px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  border: 1px solid #c6d9f7;
+  background: #eef4ff;
+  color: var(--primary-strong);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 /* ============================================================
@@ -5859,6 +5905,10 @@ a {
 .apr-match {
   color: var(--success);
   font-weight: 400;
+}
+.apr-mismatch {
+  color: var(--warning);
+  font-weight: 500;
 }
 .apr-sod {
   color: var(--success);
